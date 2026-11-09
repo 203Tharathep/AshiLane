@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AshiLane - 3D Racing Game (ซิ่งทะลุมิติกับอาชิ)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-CyGD1MKn.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BkwFipoj.css">
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- HUD: In-Race Overlay -->
+  <div id="hud" class="hidden">
+    <!-- Top Left: Lap & Position -->
+    <div class="hud-top-left">
+      <div id="hud-rank" class="rank-badge">1<span>st</span></div>
+      <div class="lap-box">
+        <div id="hud-lap" class="lap-text">LAP 1 / 3</div>
+        <div id="hud-time" class="time-text">00:00.00</div>
+        <div id="hud-best" class="best-text">BEST: --:--.--</div>
+      </div>
+    </div>
+
+    <!-- Top Center: Mystery Item Slot -->
+    <div id="hud-item-slot" class="item-slot hidden">
+      <div class="item-icon-wrap">
+        <span id="hud-item-icon">❓</span>
+      </div>
+      <span class="item-key-hint">[Q] หรือ [F] ใช้ไอเทม</span>
+    </div>
+
+    <!-- Top Right: Minimap Radar -->
+    <div class="hud-top-right">
+      <canvas id="minimap-canvas" width="160" height="160"></canvas>
+    </div>
+
+    <!-- Bottom Left: Ashi Driver Reaction Cam & Emote Soundboard -->
+    <div class="hud-bottom-left">
+      <div class="driver-portrait-container">
+        <img id="hud-driver-img" src="" alt="Ashi Driver" />
+        <div id="hud-reaction-bubble" class="reaction-bubble">สปีดดด!</div>
+        <div id="hud-driver-name" class="driver-tag">นักซิ่งอาชิ</div>
+      </div>
+
+      <!-- Quick Emote Soundboard -->
+      <div class="emote-bar">
+        <button class="emote-btn">🔥 ปาดหน้า!</button>
+        <button class="emote-btn">🚀 แรงเกินต้าน!</button>
+        <button class="emote-btn">👑 เสี่ยมาแล้ว!</button>
+        <button class="emote-btn">🏎️ ดริฟต์เนียนๆ</button>
+      </div>
+    </div>
+
+    <!-- Bottom Right: Speedometer & Nitro Gauges -->
+    <div class="hud-bottom-right">
+      <div class="drift-gauge-container">
+        <div class="drift-gauge-label">MINI-TURBO DRIFT</div>
+        <div class="drift-gauge-track">
+          <div id="hud-drift-bar" class="drift-gauge-fill"></div>
+        </div>
+      </div>
+
+      <div class="nitro-gauge-container">
+        <div class="nitro-gauge-label">⚡ NITRO BOOST (SHIFT / E)</div>
+        <div class="nitro-gauge-track">
+          <div id="hud-nitro-bar" class="nitro-gauge-fill"></div>
+        </div>
+      </div>
+
+      <div class="speedo-cluster">
+        <div class="gear-badge">
+          <span class="gear-sub">GEAR</span>
+          <span id="hud-gear" class="gear-val">1</span>
+        </div>
+        <div class="speed-box">
+          <span id="hud-speed" class="speed-val">0</span>
+          <span class="speed-unit">KM/H</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications banner -->
+    <div id="hud-notifications"></div>
+
+    <!-- Mobile Touch Controls -->
+    <div id="touch-controls">
+      <div class="touch-dpad">
+        <button id="btn-touch-left" class="t-btn">◀</button>
+        <button id="btn-touch-right" class="t-btn">▶</button>
+      </div>
+      <div class="touch-actions">
+        <button id="btn-touch-item" class="t-btn t-item">ITEM</button>
+        <button id="btn-touch-drift" class="t-btn t-drift">DRIFT</button>
+        <button id="btn-touch-boost" class="t-btn t-boost">BOOST</button>
+        <button id="btn-touch-brake" class="t-btn t-brake">BRAKE</button>
+        <button id="btn-touch-gas" class="t-btn t-gas">GAS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Countdown 3-2-1-GO Overlay -->
+  <div id="countdown-overlay" class="hidden">
+    <div id="countdown-text" class="countdown-num">3</div>
+  </div>
+
+  <!-- VIEW 1: Main Menu -->
+  <div id="view-menu" class="ui-view">
+    <div class="menu-brand">
+      <div class="title-sub">THE ULTIMATE MEME DRIFT SIMULATOR</div>
+      <h1 class="title-main">ASHI<span class="accent">LANE</span></h1>
+      <div class="title-tag">ซิ่งทะลุมิติกับอาชิ 3D</div>
+    </div>
+
+    <div class="menu-card">
+      <div class="player-input-wrap">
+        <label for="player-name-input">ชื่อนักแข่ง (Player Name):</label>
+        <input type="text" id="player-name-input" maxlength="16" placeholder="กรอกชื่อของคุณ..." />
+      </div>
+
+      <div class="menu-actions">
+        <button id="btn-play-single" class="btn btn-primary pulse-btn">
+          <span class="btn-icon">🏆</span> แข่งกับบอทอาชิ (AI Grand Prix)
+        </button>
+        <button id="btn-play-timeattack" class="btn btn-secondary">
+          <span class="btn-icon">⏱️</span> จับเวลาความเร็ว (Time Attack)
+        </button>
+        <div class="btn-grid-two">
+          <button id="btn-open-create-room" class="btn btn-multi-host">
+            <span class="btn-icon">🌐</span> สร้างห้องเล่นกับเพื่อน
+          </button>
+          <button id="btn-open-join-room" class="btn btn-multi-join">
+            <span class="btn-icon">🔑</span> ใส่รหัสเข้าห้อง
+          </button>
+        </div>
+        <button id="btn-open-garage" class="btn btn-garage">
+          <span class="btn-icon">🚗</span> โรงรถ: เลือกรถ & สกินอาชิ 41 แบบ
+        </button>
+        <div class="menu-footer-bar">
+          <button id="btn-toggle-bgm" class="btn-subtle">🎵 เพลง: ปิด (คลิกเพื่อเปิด)</button>
+          <span class="controls-hint">⌨️ WASD/ลูกศร = ขับ | SPACE = ดริฟต์ | SHIFT = ไนโตร | Q/F = ใช้ไอเทม | C = มุมกล้อง | R = รีเซ็ต</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 2: Garage & Customization -->
+  <div id="view-garage" class="ui-view hidden">
+    <div class="garage-header">
+      <h2>โรงรถอาชิ (ASHI GARAGE)</h2>
+      <button id="btn-garage-back" class="btn btn-back">◀ บันทึก & กลับเมนู</button>
+    </div>
+
+    <div class="garage-container">
+      <!-- Left Panel: Car Selector & Stats -->
+      <div class="garage-panel car-selector-panel">
+        <div class="car-nav-header">
+          <button id="garage-car-prev" class="nav-arrow">◀</button>
+          <div class="car-info-title">
+            <span id="garage-car-tag" class="badge">SPEED DEMON</span>
+            <h3 id="garage-car-name">Ashi GT Supercar</h3>
+          </div>
+          <button id="garage-car-next" class="nav-arrow">▶</button>
+        </div>
+
+        <p id="garage-car-desc" class="car-desc-text">รถสปอร์ตแอโรไดนามิกส์ทรงต่ำ ความเร็วปลายสูงสุดจัดจ้าน</p>
+
+        <!-- Stats Bars -->
+        <div class="stats-list">
+          <div class="stat-row">
+            <span>ความเร็วสูงสุด (Speed)</span>
+            <div class="stat-bar-track"><div id="stat-speed-bar" class="stat-bar-fill"></div></div>
+          </div>
+          <div class="stat-row">
+            <span>อัตราเร่ง (Acceleration)</span>
+            <div class="stat-bar-track"><div id="stat-accel-bar" class="stat-bar-fill"></div></div>
+          </div>
+          <div class="stat-row">
+            <span>การดริฟต์ (Drift Power)</span>
+            <div class="stat-bar-track"><div id="stat-drift-bar" class="stat-bar-fill"></div></div>
+          </div>
+          <div class="stat-row">
+            <span>การควบคุม (Handling)</span>
+            <div class="stat-bar-track"><div id="stat-handling-bar" class="stat-bar-fill"></div></div>
+          </div>
+          <div class="stat-row">
+            <span>ไนโตรบูสต์ (Nitro)</span>
+            <div class="stat-bar-track"><div id="stat-boost-bar" class="stat-bar-fill"></div></div>
+          </div>
+        </div>
+
+        <!-- Color Customizer -->
+        <div class="garage-section">
+          <h4>🎨 สีตัวถัง & ไฟนีออนใต้ท้องรถ</h4>
+          <div class="color-picker-row">
+            <input type="color" id="garage-color-input" value="#ff2255" />
+            <div class="swatches-grid">
+              <span class="color-swatch" style="background: #ff2255" data-color="#ff2255"></span>
+              <span class="color-swatch" style="background: #00d2ff" data-color="#00d2ff"></span>
+              <span class="color-swatch" style="background: #00ff88" data-color="#00ff88"></span>
+              <span class="color-swatch" style="background: #ffd700" data-color="#ffd700"></span>
+              <span class="color-swatch" style="background: #9d4edd" data-color="#9d4edd"></span>
+              <span class="color-swatch" style="background: #ff6600" data-color="#ff6600"></span>
+              <span class="color-swatch" style="background: #ffffff" data-color="#ffffff"></span>
+              <span class="color-swatch" style="background: #111111" data-color="#111111"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Ashi Skin Catalogue -->
+      <div class="garage-panel skin-selector-panel">
+        <div class="skin-panel-header">
+          <h3>🖼️ เลือกสกินอาชิ (Ashi Skin Livery)</h3>
+          <span class="sub">คลิกเพื่อใส่รูปบนฝากระโปรง & หลังคารถ</span>
+        </div>
+        <div id="garage-skins-list" class="skins-scroll-grid">
+          <!-- Populated dynamically by UIManager -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 3: Multiplayer Lobby -->
+  <div id="view-lobby" class="ui-view hidden">
+    <div class="lobby-card">
+      <div class="lobby-header">
+        <div class="room-code-tag">รหัสห้อง (ROOM CODE)</div>
+        <div id="lobby-room-code" class="room-code-big">ASHI-0000</div>
+        <div class="code-btn-row">
+          <button id="btn-copy-code" class="btn btn-sm">📋 คัดลอกรหัส</button>
+          <button id="btn-copy-link" class="btn btn-sm btn-cyan">🔗 คัดลอกลิงก์ชวนเพื่อน</button>
+        </div>
+      </div>
+
+      <!-- Lobby Players Grid -->
+      <div class="lobby-players-section">
+        <h3>ผู้เล่นในห้อง (RACERS)</h3>
+        <div id="lobby-players-grid" class="players-grid"></div>
+      </div>
+
+      <!-- Host Settings -->
+      <div id="lobby-host-controls" class="lobby-settings-box">
+        <div class="setting-item">
+          <label>จำนวนรอบ (Laps):</label>
+          <select id="lobby-laps-select">
+            <option value="1">1 รอบ (Quick Sprint)</option>
+            <option value="2">2 รอบ</option>
+            <option value="3" selected>3 รอบ (มาตรฐาน Grand Prix)</option>
+            <option value="5">5 รอบ (มาราธอน)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label>เติมบอท AI เข้ามาแข่งด้วย:</label>
+          <select id="lobby-ai-select">
+            <option value="0">ไม่เติมบอท (เฉพาะเพื่อน)</option>
+            <option value="2" selected>+ 2 คัน</option>
+            <option value="4">+ 4 คัน</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Lobby Action Buttons -->
+      <div class="lobby-footer">
+        <button id="btn-leave-lobby" class="btn btn-danger">ออกจากห้อง</button>
+        <button id="btn-ready" class="btn btn-warning">⏳ กดพร้อม</button>
+        <button id="btn-start-race" class="btn btn-primary pulse-btn">🚀 เริ่มการแข่งขัน (Start Race)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 4: Victory / Podium -->
+  <div id="view-victory" class="ui-view hidden">
+    <div class="victory-card">
+      <h2 class="victory-title">🏁 เข้าเส้นชัย! (RACE FINISHED)</h2>
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th>อันดับ</th>
+            <th>นักแข่ง</th>
+            <th>รถที่ใช้</th>
+            <th>เวลารวม</th>
+            <th>รอบที่ดีที่สุด</th>
+          </tr>
+        </thead>
+        <tbody id="victory-rankings-body"></tbody>
+      </table>
+
+      <div class="victory-actions">
+        <button id="btn-victory-restart" class="btn btn-primary">🔄 แข่งใหม่อีกรอบ</button>
+        <button id="btn-victory-menu" class="btn btn-secondary">🏠 กลับเมนูหลัก</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
