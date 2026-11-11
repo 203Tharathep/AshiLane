@@ -320,6 +320,48 @@ export class AudioManager {
     } catch (e) {}
   }
 
+  playLeaderboardRankPop(step = 0, total = 7, isPlayer = false) {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      // Rising pitch as we climb closer to 1st place
+      const ratio = total > 1 ? Math.min(1, Math.max(0, step / (total - 1))) : 0.5;
+      const baseFreq = 360 + ratio * 360; // 360Hz up to 720Hz
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = isPlayer ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.25, now + 0.08);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(isPlayer ? 0.22 : 0.13, now + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + (isPlayer ? 0.24 : 0.15));
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + (isPlayer ? 0.24 : 0.15));
+
+      // Extra bright harmonic chirp for the player
+      if (isPlayer) {
+        const osc2 = this.ctx.createOscillator();
+        const gain2 = this.ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(baseFreq * 1.8, now + 0.03);
+        gain2.gain.setValueAtTime(0.001, now + 0.03);
+        gain2.gain.linearRampToValueAtTime(0.12, now + 0.05);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+        osc2.connect(gain2);
+        gain2.connect(this.ctx.destination);
+        osc2.start(now + 0.03);
+        osc2.stop(now + 0.26);
+      }
+    } catch (e) {}
+  }
+
   playVictoryChime() {
     if (!this.ctx || this.isMuted) return;
     const now = this.ctx.currentTime;

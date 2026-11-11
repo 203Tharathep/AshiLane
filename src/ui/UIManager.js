@@ -27,6 +27,8 @@ export class UIManager {
     this.onGridIntroSkip = null;
     this.currentGridRacers = [];
     this.activeGridRacerIndex = -1;
+    this.victoryTimeouts = [];
+    this.isVictoryAnimating = false;
 
     // Selected Player Customization
     const savedCarIdx = parseInt(localStorage.getItem('ashilane_car_index') || '0', 10);
@@ -349,13 +351,25 @@ export class UIManager {
       this.skipGridIntro();
     });
 
+    // Victory Screen click to skip animation
+    this.viewVictory?.addEventListener('click', (e) => {
+      if (e.target.closest('#victory-actions-panel')) return;
+      if (this.isVictoryAnimating && typeof this.instantRevealAllVictory === 'function') {
+        this.instantRevealAllVictory();
+      }
+    });
+
     // Keyboard shortcuts for Victory / Leaderboard screen
     window.addEventListener('keydown', (e) => {
       if (this.currentView === 'victory') {
-        if (e.code === 'Space') {
+        if (e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
-          this.showView('hud');
-          this.game.restartRace();
+          if (this.isVictoryAnimating && typeof this.instantRevealAllVictory === 'function') {
+            this.instantRevealAllVictory();
+          } else {
+            this.showView('hud');
+            this.game.restartRace();
+          }
         } else if (e.code === 'Escape') {
           e.preventDefault();
           this.showView('menu');
@@ -410,6 +424,13 @@ export class UIManager {
     this.currentView = viewName;
     if (viewName !== 'grid_intro') {
       this.hideGridIntro();
+    }
+    if (viewName !== 'victory') {
+      this.isVictoryAnimating = false;
+      if (this.victoryTimeouts) {
+        this.victoryTimeouts.forEach(t => clearTimeout(t));
+        this.victoryTimeouts = [];
+      }
     }
     [this.viewMenu, this.viewStageSelect, this.viewGarage, this.viewLobby, this.viewVictory].forEach(v => {
       if (v) v.classList.add('hidden');
@@ -753,135 +774,81 @@ export class UIManager {
     });
   }
 
-  showVictoryScreen(results) {
-    this.showView('victory');
-
-    // Multi-burst Confetti Celebration!
+  triggerConfetti() {
     try {
       if (typeof confetti === 'function') {
         // Center burst
         confetti({ particleCount: 160, spread: 90, origin: { y: 0.52 } });
         // Left cannon
-        setTimeout(() => confetti({ particleCount: 90, angle: 60, spread: 65, origin: { x: 0.12, y: 0.65 } }), 350);
+        setTimeout(() => confetti({ particleCount: 90, angle: 60, spread: 65, origin: { x: 0.12, y: 0.65 } }), 320);
         // Right cannon
-        setTimeout(() => confetti({ particleCount: 90, angle: 120, spread: 65, origin: { x: 0.88, y: 0.65 } }), 700);
+        setTimeout(() => confetti({ particleCount: 90, angle: 120, spread: 65, origin: { x: 0.88, y: 0.65 } }), 640);
         // Champion gold sparkle shower
         setTimeout(() => confetti({
           particleCount: 140,
           spread: 120,
           origin: { y: 0.35 },
           colors: ['#ffd700', '#ffaa00', '#ffffff', '#00f0ff']
-        }), 1100);
+        }), 960);
       }
     } catch (e) {}
+  }
 
-    // 1. Find player result & determine dynamic headline
+  showVictoryScreen(results) {
+    this.showView('victory');
+
+    // Clear any previous victory animations
+    if (this.victoryTimeouts) {
+      this.victoryTimeouts.forEach(t => clearTimeout(t));
+    }
+    this.victoryTimeouts = [];
+    this.isVictoryAnimating = true;
+
+    // 1. Determine player result & headlines
     const playerResult = results.find(r => r.isPlayer);
     const playerRank = playerResult ? playerResult.rank : (results.findIndex(r => r.isPlayer) + 1);
     const headlineEl = document.getElementById('podium-headline');
     const subheadlineEl = document.getElementById('podium-subheadline');
+    const actionsPanel = document.getElementById('victory-actions-panel');
+    const skipHint = document.getElementById('victory-skip-hint');
 
-    if (headlineEl && subheadlineEl) {
+    // Initial suspense headline during reveal
+    if (headlineEl) headlineEl.innerHTML = '🏁 กำลังประมวลผลอันดับการแข่งขัน...';
+    if (subheadlineEl) subheadlineEl.textContent = 'ประกาศผลอย่างเป็นทางการ ค่อยๆ สรุปจากอันดับท้ายสู่แชมเปี้ยน!';
+    if (actionsPanel) {
+      actionsPanel.classList.add('actions-hidden');
+      actionsPanel.classList.remove('actions-revealed');
+    }
+    if (skipHint) {
+      skipHint.classList.remove('hidden');
+    }
+
+    const updateFinalHeadline = () => {
+      if (!headlineEl || !subheadlineEl) return;
       if (playerRank === 1) {
         headlineEl.innerHTML = '👑 ยินดีด้วย! คุณคว้าแชมป์อันดับ 1! 🏆';
-        subheadlineEl.textContent = 'สุดยอดฝีมือไร้เทียมทาน คว้าถ้วยรางวัลชนะเลิศอันดับ 1 ครองโพเดียมทองคำ!';
+        subheadlineEl.textContent = 'สุดยอดฝีมือไร้เทียมทาน คว้าถ้วยรางวัลชนะเลิศอันดับ 1 ครองบัลลังก์ทองคำ!';
       } else if (playerRank === 2) {
-        headlineEl.innerHTML = '🥈 ยอดเยี่ยมมาก! คุณขึ้นโพเดียมอันดับ 2!';
-        subheadlineEl.textContent = 'ขับเคี่ยวสุดมันส์ ก้าวขึ้นสู่โพเดียมเหรียญเงินแห่งเกียรติยศ!';
+        headlineEl.innerHTML = '🥈 ยอดเยี่ยมมาก! คุณจบอันดับ 2!';
+        subheadlineEl.textContent = 'ขับเคี่ยวสุดมันส์ คว้าตำแหน่งรองชนะเลิศอันดับ 1 แห่งเกียรติยศ!';
       } else if (playerRank === 3) {
-        headlineEl.innerHTML = '🥉 เยี่ยมมาก! คุณขึ้นโพเดียมอันดับ 3!';
-        subheadlineEl.textContent = 'ฝ่าฟันอุปสรรคจนเข้าเส้นชัยติด 1 ใน 3 โพเดียมเหรียญทองแดง!';
+        headlineEl.innerHTML = '🥉 เยี่ยมมาก! คุณจบอันดับ 3!';
+        subheadlineEl.textContent = 'ฝ่าฟันอุปสรรคจนเข้าเส้นชัยติดท็อป 3 อันดับแรก!';
       } else {
-        headlineEl.innerHTML = '🏁 การแข่งขันสิ้นสุด! สรุปอันดับการแข่งขัน';
+        const winner = results[0];
+        headlineEl.innerHTML = `🏁 การแข่งขันสิ้นสุด! ${winner?.name || 'แชมเปี้ยน'} คว้าอันดับ 1`;
         subheadlineEl.textContent = `คุณจบการแข่งขันในอันดับที่ ${playerRank} — ซ้อมมือแล้วกลับมาท้าชิงแชมป์ใหม่!`;
       }
-    }
+    };
 
-    // 2. Populate Player Performance Dashboard
-    const rankEl = document.getElementById('vp-rank');
-    const timeEl = document.getElementById('vp-time');
-    const speedEl = document.getElementById('vp-speed');
-    const bestEl = document.getElementById('vp-bestlap');
-
-    if (rankEl && playerResult) {
-      const rankBadgeText = ['#1 แชมเปี้ยน 👑', '#2 รองชนะเลิศ 🥈', '#3 รองชนะเลิศ 🥉'][playerRank - 1] || `#${playerRank}`;
-      rankEl.textContent = rankBadgeText;
-      if (playerRank === 1) rankEl.style.color = '#ffd700';
-      else if (playerRank === 2) rankEl.style.color = '#e2e8f0';
-      else if (playerRank === 3) rankEl.style.color = '#f59e0b';
-      else rankEl.style.color = '#00f0ff';
-    }
-
-    if (timeEl && playerResult) {
-      if (playerResult.isFinished) {
-        timeEl.innerHTML = `<span class="res-status-badge finished">FINISHED</span> ${this.game.hud.formatTime(playerResult.totalTime)}`;
-      } else {
-        const distM = Math.max(1, Math.round(playerResult.distanceRemaining || 0));
-        timeEl.innerHTML = `<span class="res-status-badge timeout">TIME OUT</span> ขาดอีก ${distM} ม.`;
-      }
-    }
-
-    if (speedEl && playerResult) {
-      const topSpd = playerResult.maxSpeed || this.game.playerCar?.maxSpeedReached || 0;
-      speedEl.textContent = `${Math.round(topSpd)} km/h`;
-    }
-
-    if (bestEl && playerResult) {
-      bestEl.textContent = playerResult.bestLap ? this.game.hud.formatTime(playerResult.bestLap) : '-';
-    }
-
-    // 3. Populate Podium 1st, 2nd, 3rd
-    const podiumRanks = [
-      { rank: 1, id: '1', result: results[0] },
-      { rank: 2, id: '2', result: results[1] },
-      { rank: 3, id: '3', result: results[2] }
-    ];
-
-    podiumRanks.forEach(({ rank, id, result }) => {
-      const colEl = document.getElementById(`podium-col-${id}`);
-      const avatarEl = document.getElementById(`podium-avatar-${id}`);
-      const nameEl = document.getElementById(`podium-name-${id}`);
-      const carEl = document.getElementById(`podium-car-${id}`);
-      const timeEl = document.getElementById(`podium-time-${id}`);
-
-      if (!colEl) return;
-
-      if (result) {
-        colEl.style.display = 'flex';
-        if (avatarEl) {
-          avatarEl.onerror = () => {
-            avatarEl.src = '/assets/ashi/Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg';
-          };
-          avatarEl.src = `/assets/ashi/${result.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg'}`;
-        }
-        if (nameEl) {
-          nameEl.innerHTML = `${result.name} ${result.isPlayer ? '<span class="podium-you-pill">YOU</span>' : ''}`;
-        }
-        if (carEl) {
-          carEl.textContent = result.carName || 'รถซิ่งอาชิ';
-        }
-        if (timeEl) {
-          if (result.isFinished) {
-            const formattedTotal = this.game.hud.formatTime(result.totalTime);
-            const formattedBest = result.bestLap ? this.game.hud.formatTime(result.bestLap) : '-';
-            timeEl.innerHTML = `<span>เวลา: <strong>${formattedTotal}</strong></span> | <span>Best: <strong>${formattedBest}</strong></span>`;
-          } else {
-            const distM = Math.max(1, Math.round(result.distanceRemaining || 0));
-            timeEl.innerHTML = `<span style="color: #ffaa00;">สถานะ: <strong>ขาดอีก ${distM} ม.</strong></span>`;
-          }
-        }
-      } else {
-        colEl.style.display = 'none';
-      }
-    });
-
-    // 4. Populate All Racers Table
+    // 2. Populate All Racers Table with hidden rows
     const tableBody = document.getElementById('victory-rankings-body');
+    const rowElements = [];
     if (tableBody) {
       tableBody.innerHTML = '';
       results.forEach((r, idx) => {
         const row = document.createElement('tr');
-        row.className = r.isPlayer ? 'player-row' : '';
+        row.className = `leaderboard-row row-hidden ${r.isPlayer ? 'player-row' : ''}`;
         const rankSuffix = ['1st 🏆', '2nd 🥈', '3rd 🥉'][idx] || `${idx + 1}th`;
 
         const statusHtml = r.isFinished
@@ -920,7 +887,93 @@ export class UIManager {
           <td class="best-col">${bestLapStr}</td>
         `;
         tableBody.appendChild(row);
+        rowElements.push(row);
       });
     }
+
+    // 3. Instant Reveal All Handler (Skip Animation)
+    this.instantRevealAllVictory = () => {
+      if (!this.isVictoryAnimating) return;
+      if (this.victoryTimeouts) {
+        this.victoryTimeouts.forEach(t => clearTimeout(t));
+        this.victoryTimeouts = [];
+      }
+      this.isVictoryAnimating = false;
+
+      rowElements.forEach((row, idx) => {
+        row.classList.remove('row-hidden');
+        row.classList.add('row-revealed');
+        if (idx === 0) {
+          row.classList.add('winner-revealed');
+        }
+      });
+
+      updateFinalHeadline();
+      if (skipHint) skipHint.classList.add('hidden');
+      if (actionsPanel) {
+        actionsPanel.classList.remove('actions-hidden');
+        actionsPanel.classList.add('actions-revealed');
+      }
+
+      this.triggerConfetti();
+    };
+
+    // 4. Sequential Staggered Reveal Animation: from bottom rank to top (1st place)
+    const total = results.length;
+    let currentDelay = 220; // brief initial delay
+
+    for (let i = total - 1; i >= 0; i--) {
+      const rankIndex = i;
+      const racer = results[rankIndex];
+      const row = rowElements[rankIndex];
+      const isFirst = (rankIndex === 0);
+      const isTop3 = (rankIndex <= 2);
+
+      const timeout = setTimeout(() => {
+        if (!this.isVictoryAnimating) return;
+
+        row.classList.remove('row-hidden');
+        row.classList.add('row-revealed');
+
+        if (isFirst) {
+          row.classList.add('winner-revealed');
+          updateFinalHeadline();
+          if (this.game.audio?.playVictoryChime) {
+            this.game.audio.playVictoryChime();
+          }
+          this.triggerConfetti();
+        } else {
+          const stepFromBottom = (total - 1) - rankIndex;
+          if (this.game.audio?.playLeaderboardRankPop) {
+            this.game.audio.playLeaderboardRankPop(stepFromBottom, total, racer.isPlayer);
+          }
+        }
+      }, currentDelay);
+
+      this.victoryTimeouts.push(timeout);
+
+      if (isFirst) {
+        currentDelay += 550;
+      } else if (rankIndex === 1) {
+        // Dramatic suspense pause before revealing 1st place!
+        currentDelay += 600;
+      } else if (isTop3) {
+        currentDelay += 380;
+      } else {
+        currentDelay += 260;
+      }
+    }
+
+    // Final step: reveal action buttons and hide skip hint
+    const finalTimeout = setTimeout(() => {
+      if (!this.isVictoryAnimating) return;
+      this.isVictoryAnimating = false;
+      if (skipHint) skipHint.classList.add('hidden');
+      if (actionsPanel) {
+        actionsPanel.classList.remove('actions-hidden');
+        actionsPanel.classList.add('actions-revealed');
+      }
+    }, currentDelay);
+    this.victoryTimeouts.push(finalTimeout);
   }
 }
