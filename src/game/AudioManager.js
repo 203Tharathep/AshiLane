@@ -94,6 +94,21 @@ export class AudioManager {
     whiteNoise.start();
   }
 
+  stopEngine() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      if (this.engineGain) {
+        this.engineGain.gain.cancelScheduledValues(now);
+        this.engineGain.gain.setTargetAtTime(0.0, now, 0.05);
+      }
+      if (this.screechGain) {
+        this.screechGain.gain.cancelScheduledValues(now);
+        this.screechGain.gain.setTargetAtTime(0.0, now, 0.05);
+      }
+    } catch (e) {}
+  }
+
   updateEngine(speedKmh, throttle, isDrifting, isBoost) {
     if (!this.ctx || this.isMuted) return;
     if (this.ctx.state === 'suspended') {
@@ -186,20 +201,32 @@ export class AudioManager {
 
   playBoostSound() {
     if (!this.ctx || this.isMuted) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sawtooth';
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
 
-    osc.frequency.setValueAtTime(200, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.35);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(520, now + 0.3);
 
-    gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1200, now);
+      filter.frequency.exponentialRampToValueAtTime(2400, now + 0.3);
 
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.5);
+      // Softer, pleasant volume: 0.10 instead of 0.35
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.10, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.38);
+    } catch (e) {}
   }
 
   playCollision() {
@@ -366,6 +393,12 @@ export class AudioManager {
     if (!this.ctx || this.isMuted) return;
     const now = this.ctx.currentTime;
 
+    // Debounce: prevent overlapping crowd noises or rapid repeating
+    if (this.lastVictoryChimeTime && now - this.lastVictoryChimeTime < 2.5) {
+      return;
+    }
+    this.lastVictoryChimeTime = now;
+
     // 1. Triumphant Fanfare Arpeggio Chords
     const chords = [
       { time: 0.00, notes: [523.25, 659.25] },          // C5, E5
@@ -380,13 +413,13 @@ export class AudioManager {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         const startTime = now + c.time;
-        const dur = (c.time >= 0.68) ? 1.8 : 0.35;
+        const dur = (c.time >= 0.68) ? 1.6 : 0.35;
 
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(freq, startTime);
 
         gain.gain.setValueAtTime(0.001, startTime);
-        gain.gain.exponentialRampToValueAtTime(0.22, startTime + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.18, startTime + 0.04);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
 
         const filter = this.ctx.createBiquadFilter();
@@ -402,9 +435,9 @@ export class AudioManager {
       });
     });
 
-    // 2. Crowd Cheer Noise Synth
+    // 2. Crowd Cheer Noise Synth with clean cutoff
     try {
-      const bufferSize = this.ctx.sampleRate * 2.2;
+      const bufferSize = Math.floor(this.ctx.sampleRate * 2.2);
       const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
@@ -421,14 +454,16 @@ export class AudioManager {
 
       const cheerGain = this.ctx.createGain();
       cheerGain.gain.setValueAtTime(0.001, now + 0.6);
-      cheerGain.gain.exponentialRampToValueAtTime(0.25, now + 0.85);
-      cheerGain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+      cheerGain.gain.exponentialRampToValueAtTime(0.20, now + 0.85);
+      cheerGain.gain.exponentialRampToValueAtTime(0.001, now + 2.45);
+      cheerGain.gain.setValueAtTime(0.0, now + 2.5);
 
       noise.connect(bandpass);
       bandpass.connect(cheerGain);
       cheerGain.connect(this.ctx.destination);
 
       noise.start(now + 0.6);
+      noise.stop(now + 2.5);
     } catch (e) {}
   }
 

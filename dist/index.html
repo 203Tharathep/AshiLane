@@ -10,8 +10,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap"
     rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-CibW0SIN.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-O1RGdyr_.css">
+  <script type="module" crossorigin src="/assets/index-DUlOvvdd.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-C0gF1TYj.css">
 </head>
 
 <body>
@@ -30,12 +30,11 @@
       </div>
     </div>
 
-    <!-- Top Center: Mystery Item Slot -->
-    <div id="hud-item-slot" class="item-slot hidden">
+    <!-- Top Center: Mystery Item Slot (แตะที่นี่เพื่อใช้ไอเทม) -->
+    <div id="hud-item-slot" class="item-slot hidden" title="แตะเพื่อใช้ไอเทม [Q / F]">
       <div class="item-icon-wrap">
         <span id="hud-item-icon">❓</span>
       </div>
-      <span class="item-key-hint">[Q] หรือ [F] ใช้ไอเทม</span>
     </div>
 
     <!-- Top Center: 10s Finish Countdown Banner -->
@@ -57,33 +56,18 @@
         คันที่ไม่ทันจะคิดอันดับตามระยะที่เหลือถึงเส้นชัย</div>
     </div>
 
-    <!-- Top Right: Minimap Radar & Pause Button -->
+    <!-- Top Right: Minimap Radar, Pause & Gyro Controls -->
     <div class="hud-top-right">
+      <button id="btn-toggle-gyro" class="hud-gyro-btn" title="เปิด/ปิดการเอียงโทรศัพท์บังคับ">📱 เอียงเครื่อง: เปิด</button>
       <button id="btn-hud-pause" class="hud-pause-btn" title="หยุดเกม [ESC / P]">⏸️</button>
       <canvas id="minimap-canvas" width="160" height="160"></canvas>
     </div>
 
-    <!-- Bottom Left: Ashi Driver Reaction Cam & Emote Soundboard -->
-    <div class="hud-bottom-left">
-      <div class="driver-portrait-container">
-        <img id="hud-driver-img" src="" alt="Ashi Driver" />
-        <div id="hud-reaction-bubble" class="reaction-bubble">สปีดดด!</div>
-        <div id="hud-driver-name" class="driver-tag">นักซิ่งอาชิ</div>
-      </div>
-
-      <!-- Quick Emote Soundboard -->
-      <div class="emote-bar">
-        <button class="emote-btn">🔥 ปาดหน้า!</button>
-        <button class="emote-btn">🚀 แรงเกินต้าน!</button>
-        <button class="emote-btn">👑 เสี่ยมาแล้ว!</button>
-        <button class="emote-btn">🏎️ ดริฟต์เนียนๆ</button>
-      </div>
-    </div>
+    <!-- Floating Reaction Toast -->
+    <div id="hud-reaction-bubble" class="reaction-bubble">สปีดดด!</div>
 
     <!-- Bottom Right: Speedometer & Nitro Gauges -->
     <div class="hud-bottom-right">
-      <div id="hud-momentum-badge" class="momentum-badge hidden">🎯 เลี้ยงความเร็ว (CARVING)</div>
-
       <div class="drift-gauge-container">
         <div class="drift-gauge-label">MINI-TURBO DRIFT</div>
         <div class="drift-gauge-track">
@@ -92,17 +76,13 @@
       </div>
 
       <div class="nitro-gauge-container">
-        <div class="nitro-gauge-label">⚡ NITRO BOOST (SHIFT / E)</div>
+        <div class="nitro-gauge-label">⚡ NITRO BOOST</div>
         <div class="nitro-gauge-track">
           <div id="hud-nitro-bar" class="nitro-gauge-fill"></div>
         </div>
       </div>
 
       <div class="speedo-cluster">
-        <div class="gear-badge">
-          <span class="gear-sub">GEAR</span>
-          <span id="hud-gear" class="gear-val">1</span>
-        </div>
         <div class="speed-box">
           <span id="hud-speed" class="speed-val">0</span>
           <span class="speed-unit">KM/H</span>
@@ -113,18 +93,17 @@
     <!-- Notifications banner -->
     <div id="hud-notifications"></div>
 
-    <!-- Mobile Touch Controls -->
+    <!-- Mobile / Tablet Touch Controls -->
     <div id="touch-controls">
       <div class="touch-dpad">
-        <button id="btn-touch-left" class="t-btn">◀</button>
-        <button id="btn-touch-right" class="t-btn">▶</button>
+        <button id="btn-touch-left" class="t-btn t-steer" aria-label="เลี้ยวซ้าย">◀</button>
+        <button id="btn-touch-right" class="t-btn t-steer" aria-label="เลี้ยวขวา">▶</button>
       </div>
       <div class="touch-actions">
-        <button id="btn-touch-item" class="t-btn t-item">ITEM</button>
-        <button id="btn-touch-drift" class="t-btn t-drift">DRIFT</button>
-        <button id="btn-touch-boost" class="t-btn t-boost">BOOST</button>
-        <button id="btn-touch-brake" class="t-btn t-brake">BRAKE</button>
-        <button id="btn-touch-gas" class="t-btn t-gas">GAS</button>
+        <button id="btn-touch-drift" class="t-btn t-drift" aria-label="ดริฟต์">DRIFT</button>
+        <button id="btn-touch-boost" class="t-btn t-boost" aria-label="ไนโตร">NITRO</button>
+        <button id="btn-touch-brake" class="t-btn t-brake" aria-label="เบรก">BRAKE</button>
+        <button id="btn-touch-gas" class="t-btn t-gas" aria-label="คันเร่ง">GAS</button>
       </div>
     </div>
   </div>

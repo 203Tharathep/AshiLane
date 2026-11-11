@@ -1801,10 +1801,10 @@ export class Game {
       if (this.hud) {
         this.hud.showFinishCountdown(winnerName, car.isPlayer);
       }
-      if (this.audio) {
-        this.audio.playVictoryChime();
-      }
       if (car.isPlayer) {
+        if (this.audio) {
+          this.audio.playVictoryChime();
+        }
         this.hud.showNotification('👑 คุณเข้าเส้นชัยอันดับ 1! กำลังปิดการแข่งขันใน 10 วินาที...');
       } else {
         this.hud.showNotification(`🏁 ${winnerName} เข้าเส้นชัยอันดับ 1! ปิดเส้นชัยใน 10 วินาที!`, 4000);
@@ -1830,6 +1830,7 @@ export class Game {
     this.finishCountdownActive = false;
     this.isRacing = false;
     if (this.hud) this.hud.hideFinishCountdown();
+    if (this.audio) this.audio.stopEngine();
 
     const maxLaps = this.playerCar?.totalLaps || 3;
     const trackLength = (this.track && this.track.trackLength) ? this.track.trackLength : 1200;
@@ -1950,11 +1951,13 @@ export class Game {
     });
 
     this.state = 'VICTORY';
-    if (this.audio) this.audio.playVictoryChime();
+    if (this.audio) {
+      this.audio.stopEngine();
+    }
 
     setTimeout(() => {
       this.ui.showVictoryScreen(finalResults);
-    }, 1300);
+    }, 1200);
   }
 
   resolveCarCollisions(delta) {
@@ -2014,6 +2017,7 @@ export class Game {
 
   updateVictoryScene(delta) {
     if (!this.playerCar) return;
+    if (this.audio) this.audio.stopEngine();
 
     // Decelerate cars to a clean halt
     if (this.playerCar.speed > 0) {
@@ -2089,9 +2093,19 @@ export class Game {
     const rotatedLookTarget = lookTargetOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), carRotY);
     const lookAtPos = carPos.clone().add(rotatedLookTarget);
     this.camera.lookAt(lookAtPos);
+
+    // Apply dynamic camera roll banking with phone tilt & car steering
+    const targetRoll = (this.gyroRoll || 0) + (-this.playerCar.inputs.steer * 0.06);
+    this.cameraRoll = THREE.MathUtils.lerp(this.cameraRoll || 0, targetRoll, delta * 8);
+    this.camera.rotateZ(this.cameraRoll);
   }
 
   initInputs() {
+    this.gyroEnabled = true;
+    this.gyroSteer = 0;
+    this.gyroRoll = 0;
+    this.cameraRoll = 0;
+
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
 
@@ -2126,14 +2140,17 @@ export class Game {
       this.keys[e.code] = false;
     });
 
-    // Mobile / Touch controls
+    // Mobile / Tablet Touch controls
     const bindTouch = (id, keyName) => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener('touchstart', (e) => { e.preventDefault(); this.keys[keyName] = true; });
-      el.addEventListener('touchend', (e) => { e.preventDefault(); this.keys[keyName] = false; });
-      el.addEventListener('mousedown', () => { this.keys[keyName] = true; });
-      el.addEventListener('mouseup', () => { this.keys[keyName] = false; });
+      const setKey = (val) => { this.keys[keyName] = val; };
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); setKey(true); }, { passive: false });
+      el.addEventListener('touchend', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
+      el.addEventListener('touchcancel', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
+      el.addEventListener('mousedown', (e) => { e.preventDefault(); setKey(true); });
+      el.addEventListener('mouseup', () => { setKey(false); });
+      el.addEventListener('mouseleave', () => { setKey(false); });
     };
 
     bindTouch('btn-touch-gas', 'KeyW');
@@ -2142,7 +2159,114 @@ export class Game {
     bindTouch('btn-touch-right', 'KeyD');
     bindTouch('btn-touch-drift', 'Space');
     bindTouch('btn-touch-boost', 'ShiftLeft');
-    bindTouch('btn-touch-item', 'KeyQ');
+
+    // Tap Item Slot to use item
+    const itemSlot = document.getElementById('hud-item-slot');
+    if (itemSlot) {
+      const triggerItem = (e) => {
+        e.preventDefault();
+        if (this.state === 'RACING' && this.items) {
+          this.items.useItem(this.playerCar);
+        }
+      };
+      itemSlot.addEventListener('touchstart', triggerItem, { passive: false });
+      itemSlot.addEventListener('click', triggerItem);
+    }
+
+    // Gyro Toggle Button
+    const btnGyro = document.getElementById('btn-toggle-gyro');
+    if (btnGyro) {
+      btnGyro.addEventListener('click', () => {
+        this.gyroEnabled = !this.gyroEnabled;
+        if (this.gyroEnabled) {
+          btnGyro.textContent = '📱 เอียงเครื่อง: เปิด';
+          btnGyro.classList.remove('off');
+          this.hud?.showReaction('📱 เปิดพวงมาลัยเอียงเครื่อง!', 1200);
+        } else {
+          btnGyro.textContent = '📱 เอียงเครื่อง: ปิด';
+          btnGyro.classList.add('off');
+          this.gyroSteer = 0;
+          this.gyroRoll = 0;
+          this.hud?.showReaction('📱 ปิดพวงมาลัยเอียงเครื่อง', 1200);
+        }
+      });
+    }
+
+    // Device Orientation (Gyroscope / Tilt Steering for mobile & tablet)
+    const setupDeviceOrientation = () => {
+      const handleOrientation = (e) => {
+        if (!this.gyroEnabled || (this.state !== 'RACING' && this.state !== 'GRID_INTRO')) {
+          this.gyroSteer = 0;
+          this.gyroRoll = 0;
+          return;
+        }
+
+        let angle = 0;
+        if (window.screen && window.screen.orientation) {
+          angle = window.screen.orientation.angle || 0;
+        } else if (typeof window.orientation !== 'undefined') {
+          angle = window.orientation || 0;
+        }
+
+        let rawTilt = 0;
+        if (angle === 90) {
+          rawTilt = (e.beta !== null) ? -e.beta : 0;
+        } else if (angle === -90 || angle === 270) {
+          rawTilt = (e.beta !== null) ? e.beta : 0;
+        } else if (angle === 180) {
+          rawTilt = (e.gamma !== null) ? -e.gamma : 0;
+        } else {
+          // Portrait or default
+          if (window.innerWidth > window.innerHeight) {
+            rawTilt = (e.beta !== null) ? -e.beta : (e.gamma || 0);
+          } else {
+            rawTilt = (e.gamma !== null) ? e.gamma : 0;
+          }
+        }
+
+        const deadzone = 2.5; // degrees deadzone
+        const maxTilt = 24.0; // degrees for full steer
+        if (Math.abs(rawTilt) < deadzone) {
+          this.gyroSteer = 0;
+          this.gyroRoll = 0;
+        } else {
+          const sign = rawTilt > 0 ? 1 : -1;
+          const normalized = Math.min(1.0, (Math.abs(rawTilt) - deadzone) / (maxTilt - deadzone));
+          this.gyroSteer = -sign * normalized;
+          this.gyroRoll = -sign * normalized * 0.16; // Camera banking roll
+        }
+      };
+
+      if (typeof window.DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener('deviceorientation', handleOrientation, true);
+
+        // iOS 13+ permission trigger on first touch/click
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const reqPerm = () => {
+            DeviceOrientationEvent.requestPermission().then(state => {
+              if (state === 'granted') {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+              }
+            }).catch(() => {});
+            window.removeEventListener('click', reqPerm);
+            window.removeEventListener('touchend', reqPerm);
+          };
+          window.addEventListener('click', reqPerm, { once: true });
+          window.addEventListener('touchend', reqPerm, { once: true });
+        }
+      }
+    };
+    setupDeviceOrientation();
+
+    // Orientation change listener for mobile / tablet
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.onWindowResize(), 120);
+    });
+    if (window.screen && window.screen.orientation) {
+      window.screen.orientation.addEventListener('change', () => {
+        setTimeout(() => this.onWindowResize(), 120);
+      });
+    }
 
     // --- Garage 360° Interactive Orbit Drag & Zoom Handlers ---
     window.addEventListener('pointerdown', (e) => {
@@ -2201,6 +2325,11 @@ export class Game {
     if (this.keys['KeyA'] || this.keys['ArrowLeft']) steer += 1;
     if (this.keys['KeyD'] || this.keys['ArrowRight']) steer -= 1;
 
+    // Gyro / Device Tilt steering on mobile & tablet
+    if (this.gyroEnabled && Math.abs(this.gyroSteer) > 0.01) {
+      steer += this.gyroSteer;
+    }
+
     // Gamepad API support
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     if (gamepads && gamepads[0]) {
@@ -2215,6 +2344,8 @@ export class Game {
       }
     }
 
+    steer = Math.max(-1.0, Math.min(1.0, steer));
+
     this.playerCar.inputs.throttle = throttle;
     this.playerCar.inputs.steer = steer;
     this.playerCar.inputs.drift = !!this.keys['Space'];
@@ -2222,23 +2353,28 @@ export class Game {
   }
 
   restartRace() {
+    if (this.audio) this.audio.stopEngine();
     this.startSinglePlayer(this.gameMode, this.currentTrackId, this.currentDifficulty, this.currentLaps);
   }
 
   exitToMainMenu() {
-    if (this.audio && this.audio.stopSpeech) {
-      this.audio.stopSpeech();
+    if (this.audio) {
+      this.audio.stopEngine();
+      if (this.audio.stopSpeech) this.audio.stopSpeech();
     }
     this.clearOpponents();
     this.state = 'MENU';
-    this.audio.updateEngine(0, 0, false, false);
     this.positionCarAtStart(this.playerCar, 0);
   }
 
   onWindowResize() {
     if (!this.camera || !this.renderer) return;
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.camera.aspect = w / h;
+    this.camera.fov = (w < h) ? 75 : 65;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(w, h);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   }
 }

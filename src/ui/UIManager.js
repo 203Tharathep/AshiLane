@@ -318,14 +318,6 @@ export class UIManager {
       this.showView('menu');
     });
 
-    // In-game Emote Soundboard buttons
-    document.querySelectorAll('.emote-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const emoteText = btn.textContent;
-        this.game.sendEmote(emoteText);
-      });
-    });
-
     // Victory Screen buttons
     document.getElementById('btn-victory-restart')?.addEventListener('click', () => {
       this.showView('hud');

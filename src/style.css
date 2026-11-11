@@ -1796,25 +1796,63 @@ body, html {
 
 .reaction-bubble {
   position: absolute;
-  top: -30px;
-  left: 80px;
-  background: rgba(255, 0, 119, 0.95);
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 243, 255, 0.5);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 243, 255, 0.25);
   color: #fff;
-  font-weight: 700;
-  font-size: 0.85rem;
-  padding: 6px 12px;
-  border-radius: 12px;
-  border-bottom-left-radius: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  padding: 8px 20px;
+  border-radius: 24px;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
   opacity: 0;
-  transform: scale(0.8);
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 20;
 }
 
 .reaction-bubble.visible {
   opacity: 1;
-  transform: scale(1);
+  transform: translateX(-50%) translateY(0);
+}
+
+.hud-gyro-btn {
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 243, 255, 0.45);
+  color: #00f0ff;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.76rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+  user-select: none;
+  margin-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-gyro-btn:hover, .hud-gyro-btn:active {
+  background: rgba(0, 243, 255, 0.25);
+  border-color: #00f0ff;
+  transform: scale(1.05);
+}
+
+.hud-gyro-btn.off {
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.6);
 }
 
 .emote-bar {
@@ -2464,83 +2502,151 @@ body, html {
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* Mobile Touch Controls */
+/* Mobile & Tablet Touch Controls */
 #touch-controls {
   display: none;
   position: absolute;
   bottom: 16px;
   left: 0;
   width: 100%;
-  padding: 0 16px;
+  padding: 0 20px;
   justify-content: space-between;
+  align-items: flex-end;
   pointer-events: none;
+  z-index: 30;
 }
 
 .touch-dpad, .touch-actions {
   display: flex;
   gap: 12px;
+  align-items: flex-end;
   pointer-events: auto;
 }
 
 .t-btn {
-  width: 56px;
-  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
   border: 2px solid rgba(255, 255, 255, 0.3);
   color: #fff;
-  font-size: 1.2rem;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  user-select: none;
+  touch-action: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease, filter 0.1s ease, background-color 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.t-btn:active {
+  transform: scale(0.92);
+  filter: brightness(1.25);
+}
+
+.t-steer {
+  width: 68px;
+  height: 68px;
+  font-size: 1.5rem;
+  border-color: rgba(0, 243, 255, 0.45);
+  color: #00f3ff;
+  background: rgba(0, 243, 255, 0.14);
 }
 
 .t-gas {
-  background: rgba(0, 255, 136, 0.4);
+  width: 74px;
+  height: 74px;
+  font-size: 0.95rem;
+  background: rgba(0, 255, 136, 0.35);
   border-color: #00ff88;
+  color: #00ff88;
+  box-shadow: 0 0 16px rgba(0, 255, 136, 0.3);
 }
 
 .t-brake {
-  background: rgba(255, 0, 85, 0.4);
+  width: 58px;
+  height: 58px;
+  font-size: 0.75rem;
+  background: rgba(255, 0, 85, 0.35);
   border-color: #ff0055;
-}
-
-.t-boost {
-  background: rgba(0, 243, 255, 0.4);
-  border-color: #00f3ff;
+  color: #ff0055;
 }
 
 .t-drift {
-  background: rgba(255, 215, 0, 0.4);
+  width: 62px;
+  height: 62px;
+  font-size: 0.78rem;
+  background: rgba(255, 215, 0, 0.35);
   border-color: #ffd700;
+  color: #ffd700;
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.25);
 }
 
-@media (max-width: 900px) {
+.t-boost {
+  width: 62px;
+  height: 62px;
+  font-size: 0.78rem;
+  background: rgba(0, 243, 255, 0.35);
+  border-color: #00f3ff;
+  color: #00f3ff;
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.25);
+}
+
+@media (max-width: 1024px), (hover: none) and (pointer: coarse) {
   #touch-controls {
     display: flex;
   }
-  .hud-bottom-left {
-    bottom: 90px;
-  }
   .hud-bottom-right {
-    bottom: 90px;
-  }
-  .garage-container {
-    grid-template-columns: 1fr;
-    height: auto;
+    bottom: 95px;
+    right: 16px;
   }
 }
 
+@media (max-width: 600px) {
+  .hud-top-left {
+    transform: scale(0.85);
+    transform-origin: top left;
+  }
+  .hud-top-right {
+    transform: scale(0.85);
+    transform-origin: top right;
+  }
+  .hud-bottom-right {
+    transform: scale(0.85);
+    transform-origin: bottom right;
+    bottom: 90px;
+    right: 10px;
+  }
+  .t-btn {
+    transform: scale(0.9);
+  }
+  .touch-dpad, .touch-actions {
+    gap: 8px;
+  }
+}
 
 /* Item Slot */
 .item-slot {
   position: absolute;
-  top: 24px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
   z-index: 10;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.item-slot:active {
+  transform: translateX(-50%) scale(0.92);
 }
 
 .item-icon-wrap {
