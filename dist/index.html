@@ -6,9 +6,9 @@
   <title>AshiLane - 3D Racing Game (ซิ่งทะลุมิติกับอาชิ)</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-DZG6TSkf.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DU42LS7t.css">
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-DbJmnZ6c.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-COL244jL.css">
 </head>
 <body>
   <div id="canvas-container"></div>
@@ -106,6 +106,9 @@
     </div>
   </div>
 
+  <!-- Cinematic Cut Transition Curtain -->
+  <div id="cinematic-transition-curtain" class="cinematic-curtain hidden"></div>
+
   <!-- Starting Grid Lineup Intro Overlay (TV Broadcast on-track camera sweep) -->
   <div id="view-grid-intro" class="grid-intro-overlay hidden">
     <div class="grid-intro-topbar">
@@ -120,15 +123,10 @@
       </button>
     </div>
 
-    <!-- Live Grid Track Position Indicator (Pills P7 to P1) -->
-    <div class="grid-racer-timeline-bar" id="grid-timeline-bar">
-      <!-- Injected: pills for P7 down to P1 -->
-    </div>
-
     <!-- TV Broadcast Lower-Third Live Racer Card -->
     <div class="grid-broadcast-wrap">
       <div id="grid-broadcast-card" class="grid-broadcast-card">
-        <div class="grid-broadcast-pos-badge" id="gb-pos">P7</div>
+        <div class="grid-broadcast-pos-badge" id="gb-pos">7</div>
         <div class="grid-broadcast-avatar-frame" id="gb-avatar-wrap">
           <img id="gb-avatar" src="" alt="Driver" />
           <div class="gb-avatar-glow" id="gb-avatar-glow"></div>
@@ -633,6 +631,6 @@
 
     </div>
   </div>
-
+
 </body>
 </html>

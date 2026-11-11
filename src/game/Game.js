@@ -320,7 +320,8 @@ export class Game {
         carId: carConfig.id,
         skinFileName: playerConfig.skinFileName,
         color: playerConfig.color,
-        isPlayer: true
+        isPlayer: true,
+        car: this.playerCar
       }
     ];
 
@@ -332,7 +333,8 @@ export class Game {
         carId: ai.config?.id || 'gt',
         skinFileName: ai.skinFileName,
         color: ai.bodyColor,
-        isPlayer: false
+        isPlayer: false,
+        car: ai
       });
     });
 
@@ -345,7 +347,6 @@ export class Game {
   playGridIntro(racers, stageTitle, onComplete) {
     this.state = 'GRID_INTRO';
     this.gridIntroTimer = 0;
-    this.gridIntroDuration = 6.2; // 6.2s TV broadcast cinematic on-track camera sweep
     this.gridIntroRacers = racers || [];
     this.gridIntroOnComplete = onComplete;
     this.countdownActive = true;
@@ -371,38 +372,58 @@ export class Game {
       ai.inputs.drift = false;
     });
 
-    if (this.audio && this.audio.playGridIntroSwoosh) {
-      this.audio.playGridIntroSwoosh();
+    const totalCars = Math.max(1, this.gridIntroRacers.length);
+    if (totalCars === 1) {
+      this.rivalSlotDuration = 0;
+      this.playerSlotDuration = 3.6;
+      this.gridIntroDuration = 3.6;
+    } else {
+      this.rivalSlotDuration = 2.8; // 2.8s rotating showcase per rival (smooth camera orbit & clear name announcement)
+      this.playerSlotDuration = 3.6;  // 3.6s rotating showcase & swoop for player
+      this.gridIntroDuration = (totalCars - 1) * this.rivalSlotDuration + this.playerSlotDuration;
     }
 
-    if (this.track && this.track.samplePos && this.track.samplePos.length > 0) {
-      const pt = this.track.samplePos[0];
-      const tangent = this.track.sampleTan[0];
-      const normal = this.track.sampleNorm[0];
+    // Determine initial car to focus (the rear-most car on the grid)
+    const initialIndex = totalCars > 1 ? totalCars - 1 : 0;
+    const initialRacer = this.gridIntroRacers[initialIndex];
+    const initialCar = initialRacer?.car || (initialIndex === 0 ? this.playerCar : this.aiCars[initialIndex - 1]);
 
-      // Calculate starting grid bounds based on total racers
-      const totalCars = Math.max(1, this.gridIntroRacers.length);
-      const maxRow = Math.max(1, Math.floor((totalCars - 1) / 2));
-      this.gridRearZ = -10.0 - (maxRow * 8.0); // Longitudinal offset of back row (e.g. -34m)
-      this.gridFrontZ = -10.0;                 // Longitudinal offset of pole position
-      this.gridStartZ = this.gridRearZ - 10.0; // Camera starting glide position behind back row
-      this.gridEndZ = this.gridFrontZ + 3.0;   // Camera tracking endpoint at pole position
+    if (initialCar) {
+      const carPos = initialCar.position;
+      const carHeading = initialCar.rotationY;
+      const col = (initialIndex % 2 === 0) ? -1 : 1;
+      const phi = (initialIndex === 0) ? -1.35 : ((col === -1) ? -1.25 : 1.25);
+      const dist = (initialIndex === 0) ? 4.35 : 4.25;
+      const height = 0.82;
 
-      // Initial camera setup looking down from behind the grid
-      const camStart = pt.clone()
-        .addScaledVector(tangent, this.gridStartZ)
-        .addScaledVector(normal, 5.5)
-        .add(new THREE.Vector3(0, 1.4, 0));
+      const Fx = Math.sin(carHeading);
+      const Fz = Math.cos(carHeading);
+      const Rx = Math.cos(carHeading);
+      const Rz = -Math.sin(carHeading);
 
-      const lookStart = pt.clone()
-        .addScaledVector(tangent, this.gridRearZ)
-        .addScaledVector(normal, -1.0)
-        .add(new THREE.Vector3(0, 0.85, 0));
+      const Ox = dist * (Math.cos(phi) * Fx + Math.sin(phi) * Rx);
+      const Oz = dist * (Math.cos(phi) * Fz + Math.sin(phi) * Rz);
 
-      this.camera.position.copy(camStart);
-      this.camera.lookAt(lookStart);
-      this.camera.fov = 60;
+      this.camera.position.set(carPos.x + Ox, carPos.y + height, carPos.z + Oz);
+      this.camera.lookAt(carPos.x, carPos.y + 0.65, carPos.z);
+      this.camera.fov = 57;
       this.camera.updateProjectionMatrix();
+
+      this.slotStartCamPos = this.camera.position.clone();
+      this.slotStartLookTarget = new THREE.Vector3(carPos.x, carPos.y + 0.65, carPos.z);
+      this.lastLookTarget = this.slotStartLookTarget.clone();
+    } else {
+      this.slotStartCamPos = null;
+      this.slotStartLookTarget = null;
+      this.lastLookTarget = null;
+    }
+
+    if (this.audio) {
+      if (this.audio.playAnnouncerImpact) {
+        this.audio.playAnnouncerImpact(false);
+      } else if (this.audio.playGridIntroSwoosh) {
+        this.audio.playGridIntroSwoosh();
+      }
     }
 
     this.ui.showGridIntro(racers, stageTitle, () => this.finishGridIntro());
@@ -410,7 +431,6 @@ export class Game {
 
   updateGridIntro(delta) {
     this.gridIntroTimer += delta;
-
     const duration = this.gridIntroDuration;
     const timer = this.gridIntroTimer;
 
@@ -419,108 +439,184 @@ export class Game {
       return;
     }
 
-    if (this.track && this.track.samplePos && this.track.samplePos.length > 0) {
-      const pt = this.track.samplePos[0];
-      const tangent = this.track.sampleTan[0];
-      const normal = this.track.sampleNorm[0];
+    const totalRacers = this.gridIntroRacers.length;
+    if (totalRacers === 0) {
+      this.finishGridIntro();
+      return;
+    }
 
-      const phase1Duration = duration * 0.76; // 0 to ~4.7s: Grid glide
+    // Helper: Quintic smootherstep for buttery smooth zero-acceleration easing
+    const smoother = (u) => {
+      const cu = Math.max(0, Math.min(1, u));
+      return cu * cu * cu * (cu * (cu * 6 - 15) + 10);
+    };
 
-      if (timer < phase1Duration) {
-        // --- Phase 1: Smooth Glide Alongside Entire Starting Grid ---
-        const p = timer / phase1Duration;
-        // Smooth sinusoidal ease
-        const easeP = p * p * (3 - 2 * p);
+    // Calculate active racer index and normalized slot progress (0..1)
+    let activeRacerIndex = 0;
+    let slotProgress = 0;
 
-        const currentZ = this.gridStartZ + easeP * (this.gridEndZ - this.gridStartZ);
-        // Weave gently along the right-hand kerb of the track
-        const currentLat = 5.2 + Math.sin(easeP * Math.PI) * 0.9;
-        // Crane height: low dynamic angle rising to mid-height, then descending near P1
-        const currentH = 1.35 + Math.sin(easeP * Math.PI) * 1.05;
-
-        // Dynamic lookAt: looking ahead and weaving across left and right car rows
-        const lookZ = currentZ + 7.5;
-        const lookLat = -0.5 + Math.sin(easeP * Math.PI * 3.2) * 2.5;
-        const lookH = 0.85;
-
-        const camPos = pt.clone()
-          .addScaledVector(tangent, currentZ)
-          .addScaledVector(normal, currentLat)
-          .add(new THREE.Vector3(0, currentH, 0));
-
-        const lookTarget = pt.clone()
-          .addScaledVector(tangent, lookZ)
-          .addScaledVector(normal, lookLat)
-          .add(new THREE.Vector3(0, lookH, 0));
-
-        this.camera.position.copy(camPos);
-        this.camera.lookAt(lookTarget);
-
-        // Calculate currently focused racer (from rear car P7 to pole car P1)
-        const total = this.gridIntroRacers.length;
-        if (total > 0) {
-          const carProgress = THREE.MathUtils.clamp(easeP, 0, 1);
-          const focusIndex = Math.min(total - 1, Math.max(0, Math.round((1 - carProgress) * (total - 1))));
-          if (focusIndex !== this.lastGridFocusedIndex) {
-            this.lastGridFocusedIndex = focusIndex;
-            this.ui.updateGridBroadcast(focusIndex);
-          }
-        }
+    if (totalRacers === 1) {
+      activeRacerIndex = 0;
+      slotProgress = Math.min(1, Math.max(0, timer / this.playerSlotDuration));
+    } else {
+      const rivalTotalTime = (totalRacers - 1) * this.rivalSlotDuration;
+      if (timer < rivalTotalTime) {
+        // Cycling from back of grid (N - 1) down to 1
+        const slot = Math.min(totalRacers - 2, Math.floor(timer / this.rivalSlotDuration));
+        activeRacerIndex = (totalRacers - 1) - slot;
+        const timeInSlot = timer - (slot * this.rivalSlotDuration);
+        slotProgress = Math.min(1, Math.max(0, timeInSlot / this.rivalSlotDuration));
       } else {
-        // --- Phase 2: Orbit Player's Car & Swoop Smoothly Behind for Launch ---
-        const phase2Start = phase1Duration;
-        const p2 = THREE.MathUtils.clamp((timer - phase2Start) / (duration - phase2Start), 0, 1);
-        const u = p2 * p2 * (3 - 2 * p2);
+        // Grand finale: Player car (P1, Pole Position)
+        activeRacerIndex = 0;
+        const timeInSlot = timer - rivalTotalTime;
+        slotProgress = Math.min(1, Math.max(0, timeInSlot / this.playerSlotDuration));
+      }
+    }
 
-        // Highlight P1 (Player, Pole Position)
-        if (this.lastGridFocusedIndex !== 0) {
-          this.lastGridFocusedIndex = 0;
-          this.ui.updateGridBroadcast(0);
+    // Switch lower-third broadcast card & announce driver name via voice when focused racer changes
+    if (activeRacerIndex !== this.lastGridFocusedIndex) {
+      this.lastGridFocusedIndex = activeRacerIndex;
+      const racer = this.gridIntroRacers[activeRacerIndex];
+      const pos = activeRacerIndex + 1;
+
+      // Remember camera start position for this slot so transition is continuous & smooth
+      this.slotStartCamPos = this.camera.position.clone();
+      this.slotStartLookTarget = (this.lastLookTarget || new THREE.Vector3()).clone();
+
+      if (this.audio) {
+        if (this.audio.playAnnouncerImpact) {
+          this.audio.playAnnouncerImpact(!!racer?.isPlayer);
+        } else if (this.audio.playGridIntroSwoosh) {
+          this.audio.playGridIntroSwoosh();
         }
+        if (this.audio.announceRacer && racer) {
+          this.audio.announceRacer(racer.name, !!racer.isPlayer, pos);
+        }
+      }
+      this.ui.updateGridBroadcast(activeRacerIndex);
+    }
 
-        const playerPos = this.playerCar ? this.playerCar.position : pt;
-        const playerRotY = this.playerCar ? this.playerCar.rotationY : 0;
+    const racer = this.gridIntroRacers[activeRacerIndex];
+    const car = racer?.car || (activeRacerIndex === 0 ? this.playerCar : this.aiCars[activeRacerIndex - 1]);
+    const carPos = car ? car.position : new THREE.Vector3(0, 0, 0);
+    const carHeading = car ? car.rotationY : 0;
+    const carLook = new THREE.Vector3(carPos.x, carPos.y + 0.65, carPos.z);
 
-        // Start point of Phase 2 (end of grid pan)
-        const p2StartPos = pt.clone()
-          .addScaledVector(tangent, this.gridEndZ)
-          .addScaledVector(normal, 5.2)
-          .add(new THREE.Vector3(0, 1.35, 0));
-        const p2StartLook = playerPos.clone().add(new THREE.Vector3(0, 0.9, 0));
+    const Fx = Math.sin(carHeading);
+    const Fz = Math.cos(carHeading);
+    const Rx = Math.cos(carHeading);
+    const Rz = -Math.sin(carHeading);
 
-        // Mid-curve apex: swooping past front bumper/quarter
-        const p2MidPos = playerPos.clone()
-          .addScaledVector(tangent, 3.2)
-          .addScaledVector(normal, 2.8)
-          .add(new THREE.Vector3(0, 2.2, 0));
+    let targetCamPos = new THREE.Vector3();
+    let targetLookTarget = carLook.clone();
 
-        // Target chase cam position
-        const chaseOffset = this.cameraOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
-        const chaseCamPos = playerPos.clone().add(chaseOffset);
+    if (activeRacerIndex > 0) {
+      // --- Rival Car Orbiting Camera Showcase ---
+      const s = smoother(slotProgress);
+      const col = (activeRacerIndex % 2 === 0) ? -1 : 1;
 
-        const lookTargetOffset = this.cameraLookOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
-        const chaseLookTarget = playerPos.clone().add(lookTargetOffset);
+      // Rotating camera angle across front and side flank
+      const phiStart = (col === -1) ? -1.25 : 1.25;
+      const phiEnd = (col === -1) ? 0.45 : -0.45;
+      const phi = phiStart + (phiEnd - phiStart) * s;
 
-        // Quadratic Bezier interpolation into chase cam
-        const inv = 1 - u;
+      const dist = 4.25 - Math.sin(s * Math.PI) * 0.45;
+      const height = 0.82 + Math.sin(s * Math.PI) * 0.38;
+
+      const Ox = dist * (Math.cos(phi) * Fx + Math.sin(phi) * Rx);
+      const Oz = dist * (Math.cos(phi) * Fz + Math.sin(phi) * Rz);
+
+      const orbitCamPos = new THREE.Vector3(carPos.x + Ox, carPos.y + height, carPos.z + Oz);
+      const orbitLook = carLook.clone().addScaledVector(new THREE.Vector3(Fx, 0, Fz), 0.25);
+
+      // Smooth jib-glide between cars during first 26% of the car's showcase
+      const transitionWindow = 0.26;
+      if (slotProgress < transitionWindow && this.slotStartCamPos && this.slotStartLookTarget) {
+        const u = slotProgress / transitionWindow;
+        const w = smoother(u);
+        targetCamPos.lerpVectors(this.slotStartCamPos, orbitCamPos, w);
+        targetLookTarget.lerpVectors(this.slotStartLookTarget, orbitLook, w);
+      } else {
+        targetCamPos.copy(orbitCamPos);
+        targetLookTarget.copy(orbitLook);
+      }
+      this.camera.fov = 57;
+      this.camera.updateProjectionMatrix();
+    } else {
+      // --- Player Car (Pole Position, P1): Dramatic 360°/180° Orbit & Swoop into Cockpit Chase Cam ---
+      const p = slotProgress;
+      const phase1Split = 0.58; // 0..0.58: Rotating showcase (~2.1s), 0.58..1.0: Swoop behind car (~1.5s)
+
+      const chaseOffset = this.cameraOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), carHeading);
+      const chaseCamPos = carPos.clone().add(chaseOffset);
+      const lookOffset = this.cameraLookOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), carHeading);
+      const chaseLookTarget = carPos.clone().add(lookOffset);
+
+      if (p < phase1Split) {
+        const u = p / phase1Split;
+        const s = smoother(u);
+
+        // Wide dynamic orbit sweeping 140° across player car front and side
+        const phi = -1.35 + s * 2.45;
+        const dist = 4.35 - s * 0.45;
+        const height = 0.80 + Math.sin(s * Math.PI) * 0.42;
+
+        const Ox = dist * (Math.cos(phi) * Fx + Math.sin(phi) * Rx);
+        const Oz = dist * (Math.cos(phi) * Fz + Math.sin(phi) * Rz);
+
+        const orbitCamPos = new THREE.Vector3(carPos.x + Ox, carPos.y + height, carPos.z + Oz);
+        const orbitLook = carLook.clone().addScaledVector(new THREE.Vector3(Fx, 0, Fz), 0.3);
+
+        const transitionWindow = 0.22;
+        if (p < transitionWindow && this.slotStartCamPos && this.slotStartLookTarget) {
+          const tw = p / transitionWindow;
+          const w = smoother(tw);
+          targetCamPos.lerpVectors(this.slotStartCamPos, orbitCamPos, w);
+          targetLookTarget.lerpVectors(this.slotStartLookTarget, orbitLook, w);
+        } else {
+          targetCamPos.copy(orbitCamPos);
+          targetLookTarget.copy(orbitLook);
+        }
+        this.camera.fov = 57;
+        this.camera.updateProjectionMatrix();
+      } else {
+        const u = (p - phase1Split) / (1 - phase1Split);
+        const s = smoother(u);
+
+        const phiEnd = -1.35 + 2.45;
+        const distEnd = 3.9;
+        const heightEnd = 0.80;
+        const Ox = distEnd * (Math.cos(phiEnd) * Fx + Math.sin(phiEnd) * Rx);
+        const Oz = distEnd * (Math.cos(phiEnd) * Fz + Math.sin(phiEnd) * Rz);
+        const p1ExitPos = new THREE.Vector3(carPos.x + Ox, carPos.y + heightEnd, carPos.z + Oz);
+
+        // Arching Bezier curve apex overhead
+        const apexPos = carPos.clone()
+          .addScaledVector(new THREE.Vector3(Fx, 0, Fz), -2.2)
+          .add(new THREE.Vector3(0, 2.8, 0));
+
+        const inv = 1 - s;
         const inv2 = inv * inv;
-        const u2 = u * u;
-        const invU2 = 2 * inv * u;
+        const s2 = s * s;
+        const midW = 2 * inv * s;
 
-        const camX = inv2 * p2StartPos.x + invU2 * p2MidPos.x + u2 * chaseCamPos.x;
-        const camY = inv2 * p2StartPos.y + invU2 * p2MidPos.y + u2 * chaseCamPos.y;
-        const camZ = inv2 * p2StartPos.z + invU2 * p2MidPos.z + u2 * chaseCamPos.z;
+        targetCamPos.x = inv2 * p1ExitPos.x + midW * apexPos.x + s2 * chaseCamPos.x;
+        targetCamPos.y = inv2 * p1ExitPos.y + midW * apexPos.y + s2 * chaseCamPos.y;
+        targetCamPos.z = inv2 * p1ExitPos.z + midW * apexPos.z + s2 * chaseCamPos.z;
 
-        this.camera.position.set(camX, camY, camZ);
-
-        const curLook = p2StartLook.clone().lerp(chaseLookTarget, u);
-        this.camera.lookAt(curLook);
-        this.camera.fov = THREE.MathUtils.lerp(60, 65, u);
+        targetLookTarget.lerpVectors(carLook, chaseLookTarget, s);
+        this.camera.fov = THREE.MathUtils.lerp(57, 65, s);
         this.camera.updateProjectionMatrix();
       }
     }
 
-    // Keep car models alive (wheels, underglow, shader idle visuals)
+    this.camera.position.copy(targetCamPos);
+    this.camera.lookAt(targetLookTarget);
+
+    this.lastLookTarget = targetLookTarget.clone();
+
+    // Keep car models alive (wheels, underglow, idle visuals)
     if (this.playerCar) this.playerCar.updateVisuals(delta);
     this.aiCars.forEach(ai => ai.updateVisuals(delta));
     this.remotePlayers.forEach(r => {
@@ -530,6 +626,10 @@ export class Game {
 
   finishGridIntro() {
     if (this.state !== 'GRID_INTRO') return;
+
+    if (this.audio && this.audio.stopSpeech) {
+      this.audio.stopSpeech();
+    }
 
     // Immediately snap camera to chase position behind player car
     if (this.playerCar) {
@@ -713,6 +813,7 @@ export class Game {
     playersList.forEach(p => {
       const isMe = p.id === this.multiplayer.localPlayerId;
       const cDef = CARS.find(c => c.id === p.carId) || CARS[0];
+      const remote = this.remotePlayers.get(p.id);
       lineupRacers.push({
         name: p.name,
         carName: cDef.nameTh,
@@ -720,7 +821,8 @@ export class Game {
         carId: cDef.id,
         skinFileName: p.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg',
         color: p.color,
-        isPlayer: isMe
+        isPlayer: isMe,
+        car: isMe ? this.playerCar : (remote?.car || null)
       });
     });
 
@@ -732,7 +834,8 @@ export class Game {
         carId: ai.config?.id || 'gt',
         skinFileName: ai.skinFileName,
         color: ai.bodyColor,
-        isPlayer: false
+        isPlayer: false,
+        car: ai
       });
     });
 
@@ -1902,6 +2005,9 @@ export class Game {
   }
 
   exitToMainMenu() {
+    if (this.audio && this.audio.stopSpeech) {
+      this.audio.stopSpeech();
+    }
     this.clearOpponents();
     this.state = 'MENU';
     this.audio.updateEngine(0, 0, false, false);

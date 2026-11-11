@@ -1702,6 +1702,29 @@ body, html {
   100% { opacity: 0; transform: translateY(-10px); }
 }
 
+/* Cinematic Cut Transition Curtain */
+.cinematic-curtain {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at center, rgba(8, 12, 24, 0.96) 0%, rgba(2, 4, 8, 1) 100%);
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cinematic-curtain.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.cinematic-curtain.hidden {
+  display: none !important;
+}
+
 /* Starting Grid Lineup Showcase Overlay - TV Broadcast On-Track Experience */
 .grid-intro-overlay {
   position: absolute;
@@ -1809,46 +1832,6 @@ body, html {
 .grid-intro-skip-pill:hover .skip-key {
   background: rgba(0, 0, 0, 0.85);
   color: #fff;
-}
-
-/* Grid Racer Timeline Indicator Bar (P7 -> P1) */
-.grid-racer-timeline-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 6px;
-  pointer-events: auto;
-}
-
-.grid-timeline-pill {
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 800;
-  padding: 4px 12px;
-  border-radius: 14px;
-  background: rgba(13, 20, 36, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #94a3b8;
-  letter-spacing: 0.5px;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.grid-timeline-pill.active {
-  background: linear-gradient(135deg, #00f3ff, #0088ff);
-  color: #000;
-  border-color: #00f3ff;
-  font-weight: 900;
-  transform: translateY(-4px) scale(1.15);
-  box-shadow: 0 0 20px rgba(0, 243, 255, 0.85);
-}
-
-.grid-timeline-pill.active.pole {
-  background: linear-gradient(135deg, #ffd700, #ff6600);
-  border-color: #ffd700;
-  color: #000;
-  box-shadow: 0 0 22px rgba(255, 215, 0, 0.95);
 }
 
 /* TV Broadcast Lower-Third Live Racer Card */

@@ -9,6 +9,18 @@ export class AudioManager {
     this.screechGain = null;
     this.screechSource = null;
     this.bgmInterval = null;
+    this.speechVoices = [];
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        try {
+          this.speechVoices = window.speechSynthesis.getVoices();
+        } catch (e) {}
+      };
+      try {
+        this.speechVoices = window.speechSynthesis.getVoices();
+      } catch (e) {}
+    }
   }
 
   init() {
@@ -411,9 +423,157 @@ export class AudioManager {
 
   toggleMute() {
     this.isMuted = !this.isMuted;
+    if (this.isMuted) {
+      this.stopSpeech();
+    }
     if (this.engineGain) {
       this.engineGain.gain.setValueAtTime(this.isMuted ? 0 : 0.1, this.ctx.currentTime);
     }
     return this.isMuted;
+  }
+
+  announceRacer(name, isPlayer = false, pos = 1) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
+
+    try {
+      window.speechSynthesis.cancel();
+
+      const allVoices = (this.speechVoices && this.speechVoices.length > 0)
+        ? this.speechVoices
+        : window.speechSynthesis.getVoices();
+
+      // Priority 1: Thai male authoritative voice (like Niwat)
+      const thaiMaleVoice = allVoices.find(v => {
+        const lang = (v.lang || '').toLowerCase();
+        const vname = (v.name || '').toLowerCase();
+        return (lang.startsWith('th') || vname.includes('thai') || vname.includes('ไทย')) &&
+               (vname.includes('niwat') || vname.includes('male') || vname.includes('ชาย'));
+      });
+
+      // Priority 2: Any Thai voice (Premwadee, Google ภาษาไทย, etc.)
+      const thaiVoice = thaiMaleVoice || allVoices.find(v => {
+        const lang = (v.lang || '').toLowerCase();
+        const vname = (v.name || '').toLowerCase();
+        return lang.startsWith('th') || vname.includes('thai') || vname.includes('ไทย');
+      });
+
+      // ดึงและทำความสะอาดชื่อนักแข่ง ตัดวงเล็บภาษาอังกฤษส่วนเกินและอิโมจิออก เพื่อให้อ่านออกเสียงได้อย่างเข้ม ดุดัน และชัดเจน
+      let cleanName = (name || '')
+        .replace(/\s*\([^)]*\)/g, '')
+        .replace(/#\d+/g, '')
+        .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/gu, '')
+        .trim();
+
+      if (!cleanName && isPlayer) {
+        cleanName = 'นักซิ่งอาชิ';
+      }
+
+      // หมายเลขภาษาไทยสำหรับเสียงพากย์ (ไม่มี P นำหน้า)
+      const thaiNumberWords = {
+        1: 'หนึ่ง',
+        2: 'สอง',
+        3: 'สาม',
+        4: 'สี่',
+        5: 'ห้า',
+        6: 'หก',
+        7: 'เจ็ด',
+        8: 'แปด'
+      };
+
+      // อ่านทั้งหมายเลขและชื่อนักแข่ง (เช่น "7, วัลคิรี อาชิ", "1, นักซิ่งอาชิ")
+      let text = '';
+      if (thaiVoice) {
+        const numWord = thaiNumberWords[pos] || `${pos}`;
+        text = cleanName ? `${numWord}, ${cleanName}` : numWord;
+      } else {
+        text = cleanName ? `${pos}, ${cleanName}` : `${pos}`;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      if (thaiVoice) {
+        utterance.voice = thaiVoice;
+        utterance.lang = 'th-TH';
+      } else {
+        const enMaleVoice = allVoices.find(v => {
+          const vname = (v.name || '').toLowerCase();
+          return v.lang.startsWith('en') && (vname.includes('david') || vname.includes('guy') || vname.includes('male') || vname.includes('natural'));
+        }) || allVoices.find(v => v.lang.startsWith('en'));
+
+        if (enMaleVoice) utterance.voice = enMaleVoice;
+        utterance.lang = 'en-US';
+      }
+
+      // โทนเสียงเข้มๆ ทุ้มๆ ดุดันระดับต่ำสุด (Web Speech API pitch 0.0 คือขีดจำกัดเสียงต่ำสุด ตอบโจทย์ pitch -3.0)
+      utterance.pitch = 0.0;
+      utterance.rate = 0.92; // จังหวะเข้ม กระชับ หนักแน่น ไม่ยานคาง
+      utterance.volume = 1.0;
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis notice:', e);
+    }
+  }
+
+  playAnnouncerImpact(isPlayer = false) {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    try {
+      // 1. Deep Sub-Bass Thud (75Hz -> 20Hz Sub Drop for ultra deep resonance)
+      const subOsc = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      subOsc.type = 'sine';
+      subOsc.frequency.setValueAtTime(isPlayer ? 95 : 75, now);
+      subOsc.frequency.exponentialRampToValueAtTime(20, now + 0.45);
+
+      subGain.gain.setValueAtTime(0.001, now);
+      subGain.gain.linearRampToValueAtTime(isPlayer ? 0.50 : 0.42, now + 0.02);
+      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.52);
+
+      subOsc.connect(subGain);
+      subGain.connect(this.ctx.destination);
+      subOsc.start(now);
+      subOsc.stop(now + 0.55);
+
+      // 2. Heavy Stadium Low-Mid Body (Fierce punch)
+      const bodyOsc = this.ctx.createOscillator();
+      const bodyGain = this.ctx.createGain();
+      bodyOsc.type = 'triangle';
+      bodyOsc.frequency.setValueAtTime(isPlayer ? 135 : 105, now);
+      bodyOsc.frequency.exponentialRampToValueAtTime(38, now + 0.30);
+
+      bodyGain.gain.setValueAtTime(0.001, now);
+      bodyGain.gain.linearRampToValueAtTime(0.28, now + 0.015);
+      bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+
+      bodyOsc.connect(bodyGain);
+      bodyGain.connect(this.ctx.destination);
+      bodyOsc.start(now);
+      bodyOsc.stop(now + 0.35);
+
+      // 3. Stadium Radio Comm Squelch/Chirp
+      const chirp = this.ctx.createOscillator();
+      const chirpGain = this.ctx.createGain();
+      chirp.type = 'sine';
+      chirp.frequency.setValueAtTime(1550, now);
+      chirp.frequency.setValueAtTime(2100, now + 0.022);
+
+      chirpGain.gain.setValueAtTime(0.05, now);
+      chirpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+      chirp.connect(chirpGain);
+      chirpGain.connect(this.ctx.destination);
+      chirp.start(now);
+      chirp.stop(now + 0.05);
+    } catch (e) {}
+  }
+
+  stopSpeech() {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
   }
 }

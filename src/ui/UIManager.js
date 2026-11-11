@@ -15,7 +15,6 @@ export class UIManager {
     this.viewVictory = document.getElementById('view-victory');
     this.viewGridIntro = document.getElementById('view-grid-intro');
     this.gridIntroStageTitle = document.getElementById('grid-intro-stage-title');
-    this.gridTimelineBar = document.getElementById('grid-timeline-bar');
     this.gridBroadcastCard = document.getElementById('grid-broadcast-card');
     this.gbPos = document.getElementById('gb-pos');
     this.gbAvatar = document.getElementById('gb-avatar');
@@ -121,12 +120,14 @@ export class UIManager {
     });
 
     document.getElementById('btn-start-selected-race')?.addEventListener('click', () => {
-      this.game.startSinglePlayer(
-        this.targetGameMode,
-        this.selectedTrackId,
-        this.selectedDifficulty,
-        this.selectedLaps
-      );
+      this.triggerRaceStartTransition(() => {
+        this.game.startSinglePlayer(
+          this.targetGameMode,
+          this.selectedTrackId,
+          this.selectedDifficulty,
+          this.selectedLaps
+        );
+      });
     });
 
     // Difficulty buttons in Stage Select
@@ -296,7 +297,9 @@ export class UIManager {
       const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3');
       const aiCount = parseInt(document.getElementById('lobby-ai-select')?.value || '2');
       const trackId = document.getElementById('lobby-stage-select')?.value || 'beach';
-      this.game.multiplayer.startRace({ laps, aiCount, trackId });
+      this.triggerRaceStartTransition(() => {
+        this.game.multiplayer.startRace({ laps, aiCount, trackId });
+      });
     });
 
     document.getElementById('btn-ready')?.addEventListener('click', () => {
@@ -347,6 +350,47 @@ export class UIManager {
     });
   }
 
+  triggerRaceStartTransition(onCutPoint) {
+    const curtain = document.getElementById('cinematic-transition-curtain');
+    if (!curtain) {
+      if (onCutPoint) onCutPoint();
+      return;
+    }
+
+    try {
+      this.game?.audio?.playClick?.();
+    } catch (e) {}
+
+    // Animate active modal card out smoothly
+    const activeCard = document.querySelector('#view-stage-select .stage-select-card, #view-lobby .lobby-card');
+    if (activeCard) {
+      activeCard.style.transition = 'transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1)';
+      activeCard.style.transform = 'scale(0.96) translateY(8px)';
+      activeCard.style.opacity = '0';
+    }
+
+    // Flash curtain to black
+    curtain.classList.remove('hidden');
+    void curtain.offsetHeight;
+    curtain.classList.add('active');
+
+    setTimeout(() => {
+      if (activeCard) {
+        activeCard.style.transform = '';
+        activeCard.style.opacity = '';
+        activeCard.style.transition = '';
+      }
+      if (onCutPoint) onCutPoint();
+
+      setTimeout(() => {
+        curtain.classList.remove('active');
+        setTimeout(() => {
+          curtain.classList.add('hidden');
+        }, 250);
+      }, 50);
+    }, 180);
+  }
+
   showView(viewName) {
     if (viewName !== 'grid_intro') {
       this.hideGridIntro();
@@ -360,6 +404,7 @@ export class UIManager {
     else if (viewName === 'garage') this.viewGarage?.classList.remove('hidden');
     else if (viewName === 'lobby') this.viewLobby?.classList.remove('hidden');
     else if (viewName === 'victory') this.viewVictory?.classList.remove('hidden');
+    else if (viewName === 'grid_intro') this.viewGridIntro?.classList.remove('hidden');
 
     if (viewName === 'hud') {
       this.game.hud.show();
@@ -369,6 +414,7 @@ export class UIManager {
   }
 
   showGridIntro(racers, stageName, onFinish) {
+    this.showView('grid_intro');
     this.onGridIntroSkip = onFinish;
     this.currentGridRacers = racers || [];
     this.activeGridRacerIndex = -1;
@@ -376,19 +422,6 @@ export class UIManager {
 
     if (this.gridIntroStageTitle) {
       this.gridIntroStageTitle.textContent = stageName || 'STARTING LINE';
-    }
-
-    // Build timeline pills for each racer (P1 down to P7)
-    if (this.gridTimelineBar) {
-      this.gridTimelineBar.innerHTML = '';
-      this.currentGridRacers.forEach((r, idx) => {
-        const pill = document.createElement('div');
-        const pos = idx + 1;
-        pill.className = `grid-timeline-pill ${pos === 1 ? 'pole' : ''}`;
-        pill.id = `grid-pill-${idx}`;
-        pill.textContent = pos === 1 ? '👑 P1 (POLE)' : `P${pos}`;
-        this.gridTimelineBar.appendChild(pill);
-      });
     }
 
     // Show initial racer (the last car at the back of the grid, e.g. P7)
@@ -408,7 +441,7 @@ export class UIManager {
 
     // Update broadcast card values
     if (this.gbPos) {
-      this.gbPos.textContent = pos === 1 ? 'P1' : `P${pos}`;
+      this.gbPos.textContent = pos;
       this.gbPos.className = `grid-broadcast-pos-badge ${pos === 1 ? 'p1' : pos === 2 ? 'p2' : pos === 3 ? 'p3' : ''}`;
     }
 
@@ -448,13 +481,6 @@ export class UIManager {
       this.gridBroadcastCard.style.animation = 'none';
       void this.gridBroadcastCard.offsetHeight;
       this.gridBroadcastCard.style.animation = 'gbSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
-    }
-
-    // Update timeline pills
-    if (this.gridTimelineBar) {
-      this.gridTimelineBar.querySelectorAll('.grid-timeline-pill').forEach((pill, idx) => {
-        pill.classList.toggle('active', idx === racerIndex);
-      });
     }
   }
 
