@@ -46,7 +46,7 @@ export class AICar extends Car {
     const normal = track.sampleNorm[targetIdx];
 
     const targetPoint = centerTarget.clone().addScaledVector(normal, this.laneOffset);
-    targetPoint.y = 0.35;
+    targetPoint.y = 0.05;
 
     // Heading calculation
     const toTarget = new THREE.Vector3().subVectors(targetPoint, this.position);

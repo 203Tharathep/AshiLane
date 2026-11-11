@@ -10,7 +10,7 @@ export class Car {
     this.game = null;
 
     // Kinematics
-    this.position = new THREE.Vector3(0, 0.35, 0);
+    this.position = new THREE.Vector3(0, 0.05, 0);
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.speed = 0; // forward speed in m/s
     this.steeringAngle = 0;
@@ -363,8 +363,8 @@ export class Car {
         this.isHittingBarrier = false;
       }
 
-      // Ground plane clamping
-      const targetY = closest.point.y + 0.35;
+      // Ground plane clamping: tires rest firmly on the road surface
+      const targetY = closest.point.y + 0.05;
       this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, delta * 16);
 
       // Boost pads check

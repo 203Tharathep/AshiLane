@@ -188,7 +188,7 @@ export class Track {
     const i = this.indexFromT(t);
     const tan = this.sampleTan[i];
     const pos = this.samplePos[i].clone().addScaledVector(this.sampleNorm[i], lateral);
-    pos.y = 0.35;
+    pos.y = 0.05;
     return { position: pos, rotationY: Math.atan2(tan.x, tan.z), index: i };
   }
 

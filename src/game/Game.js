@@ -228,7 +228,7 @@ export class Game {
       .addScaledVector(tangent, longitudinalOffset)
       .addScaledVector(normal, lateralOffset);
 
-    car.position.set(pos.x, 0.35, pos.z);
+    car.position.set(pos.x, 0.05, pos.z);
     car.rotationY = Math.atan2(tangent.x, tangent.z);
     car.speed = 0;
     car.velocity.set(0, 0, 0);
@@ -501,7 +501,7 @@ export class Game {
     const car = racer?.car || (activeRacerIndex === 0 ? this.playerCar : this.aiCars[activeRacerIndex - 1]);
     const carPos = car ? car.position : new THREE.Vector3(0, 0, 0);
     const carHeading = car ? car.rotationY : 0;
-    const carLook = new THREE.Vector3(carPos.x, carPos.y + 0.65, carPos.z);
+    const carLook = new THREE.Vector3(carPos.x, carPos.y + 0.45, carPos.z);
 
     const Fx = Math.sin(carHeading);
     const Fz = Math.cos(carHeading);
@@ -521,8 +521,8 @@ export class Game {
       const phiEnd = (col === -1) ? 0.45 : -0.45;
       const phi = phiStart + (phiEnd - phiStart) * s;
 
-      const dist = 4.25 - Math.sin(s * Math.PI) * 0.45;
-      const height = 0.82 + Math.sin(s * Math.PI) * 0.38;
+      const dist = 4.45 - Math.sin(s * Math.PI) * 0.35;
+      const height = 0.95 + Math.sin(s * Math.PI) * 0.40;
 
       const Ox = dist * (Math.cos(phi) * Fx + Math.sin(phi) * Rx);
       const Oz = dist * (Math.cos(phi) * Fz + Math.sin(phi) * Rz);

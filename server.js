@@ -13,6 +13,11 @@ const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3000;
 
+// Health check endpoint for Render monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
 // Serve static files from dist or current dir
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
@@ -64,5 +69,12 @@ app.get('*', (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🏎️ AshiLane server running on http://localhost:${PORT}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, closing server gracefully...');
+  server.close(() => {
+    process.exit(0);
+  });
 });
 

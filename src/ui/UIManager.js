@@ -16,8 +16,8 @@ export class UIManager {
     this.viewGridIntro = document.getElementById('view-grid-intro');
     this.gridIntroStageTitle = document.getElementById('grid-intro-stage-title');
     this.gridBroadcastCard = document.getElementById('grid-broadcast-card');
+    this.gbPhoto = document.getElementById('gb-photo');
     this.gbPos = document.getElementById('gb-pos');
-    this.gbAvatar = document.getElementById('gb-avatar');
     this.gbName = document.getElementById('gb-name');
     this.gbCarName = document.getElementById('gb-car-name');
     this.gbCarTag = document.getElementById('gb-car-tag');
@@ -445,8 +445,9 @@ export class UIManager {
       this.gbPos.className = `grid-broadcast-pos-badge ${pos === 1 ? 'p1' : pos === 2 ? 'p2' : pos === 3 ? 'p3' : ''}`;
     }
 
-    if (this.gbAvatar) {
-      this.gbAvatar.src = `/assets/ashi/${r.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg'}`;
+    if (this.gbPhoto) {
+      const skinFile = r.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg';
+      this.gbPhoto.src = `/assets/ashi/${skinFile}`;
     }
 
     if (this.gbName) {

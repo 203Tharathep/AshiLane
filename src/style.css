@@ -1834,28 +1834,28 @@ body, html {
   color: #fff;
 }
 
-/* TV Broadcast Lower-Third Live Racer Card */
+/* TV Broadcast Showcase Card (Docked Bottom-Left to avoid covering 3D cars) */
 .grid-broadcast-wrap {
-  width: 100%;
+  position: absolute;
+  bottom: 28px;
+  left: 36px;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-end;
   pointer-events: none;
+  z-index: 30;
 }
 
 .grid-broadcast-card {
   pointer-events: auto;
   display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 480px;
-  max-width: 620px;
-  padding: 14px 22px;
-  background: linear-gradient(135deg, rgba(13, 20, 36, 0.92), rgba(6, 10, 20, 0.96));
-  border: 2px solid rgba(0, 243, 255, 0.5);
+  flex-direction: column;
+  width: 320px;
+  border: 2.5px solid rgba(0, 243, 255, 0.6);
   border-radius: 20px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.8), 0 0 26px rgba(0, 243, 255, 0.3);
-  backdrop-filter: blur(14px);
+  background: #0a0e1c;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.88), 0 0 28px rgba(0, 243, 255, 0.35);
+  backdrop-filter: blur(16px);
   position: relative;
   overflow: hidden;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1864,21 +1864,63 @@ body, html {
 
 .grid-broadcast-card.is-player {
   border-color: #ffd700;
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.85), 0 0 32px rgba(255, 215, 0, 0.45);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.92), 0 0 35px rgba(255, 215, 0, 0.55);
+}
+
+/* Big Full Photo Box */
+.grid-broadcast-photo-box {
+  position: relative;
+  width: 100%;
+  height: 290px;
+  background: #060913;
+  overflow: hidden;
+}
+
+.grid-broadcast-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 0.4s ease;
+}
+
+.grid-broadcast-card:hover .grid-broadcast-photo {
+  transform: scale(1.04);
+}
+
+.grid-broadcast-photo-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(5, 8, 16, 0.65) 0%, rgba(5, 8, 16, 0) 28%, rgba(5, 8, 16, 0) 65%, rgba(8, 12, 22, 0.95) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.grid-broadcast-top-badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  z-index: 2;
 }
 
 .grid-broadcast-pos-badge {
   font-family: var(--font-display);
   font-size: 1.55rem;
   font-weight: 900;
-  padding: 8px 16px;
-  border-radius: 14px;
-  min-width: 70px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  min-width: 52px;
   text-align: center;
-  background: linear-gradient(135deg, #1e293b, #0f172a);
+  background: linear-gradient(135deg, rgba(20, 28, 48, 0.92), rgba(10, 15, 30, 0.95));
   color: #00f3ff;
-  border: 1.5px solid rgba(0, 243, 255, 0.5);
-  box-shadow: 0 0 14px rgba(0, 243, 255, 0.35);
+  border: 1.5px solid rgba(0, 243, 255, 0.7);
+  box-shadow: 0 0 16px rgba(0, 243, 255, 0.5);
   letter-spacing: 0.5px;
   flex-shrink: 0;
 }
@@ -1887,7 +1929,7 @@ body, html {
   background: linear-gradient(135deg, #ffd700, #ff6600);
   color: #000;
   border-color: #ffd700;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.85);
+  box-shadow: 0 0 22px rgba(255, 215, 0, 0.9);
 }
 
 .grid-broadcast-pos-badge.p2 {
@@ -1902,76 +1944,68 @@ body, html {
   border-color: #fbbf24;
 }
 
-.grid-broadcast-avatar-frame {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2.5px solid #00f3ff;
-  position: relative;
-  flex-shrink: 0;
-  background: #0f172a;
-  box-shadow: 0 0 16px rgba(0, 243, 255, 0.4);
-}
-
-.grid-broadcast-avatar-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.grid-broadcast-details {
+.grid-broadcast-meta-col {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  flex: 1;
-  min-width: 0;
-}
-
-.grid-broadcast-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .gb-team-pill {
   font-family: var(--font-display);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 700;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 8px;
-  border-radius: 6px;
+  color: #e2e8f0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   letter-spacing: 0.5px;
 }
 
 .gb-role-pill {
   font-family: var(--font-display);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 800;
   color: #00f3ff;
-  background: rgba(0, 243, 255, 0.15);
+  background: rgba(0, 243, 255, 0.25);
+  backdrop-filter: blur(8px);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 243, 255, 0.55);
   letter-spacing: 0.5px;
 }
 
 .gb-role-pill.pole {
   color: #000;
   background: #ffd700;
+  border-color: #ffd700;
   box-shadow: 0 0 10px rgba(255, 215, 0, 0.7);
+}
+
+/* Bottom Info Bar */
+.grid-broadcast-info-bar {
+  padding: 12px 16px 14px 16px;
+  background: linear-gradient(180deg, rgba(12, 17, 32, 0.97), rgba(8, 11, 22, 0.99));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  z-index: 2;
 }
 
 .grid-broadcast-driver-name {
   font-size: 1.25rem;
   font-weight: 900;
   color: #ffffff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 0.5px;
+  line-height: 1.2;
 }
 
 .gb-you-badge {
@@ -1990,8 +2024,8 @@ body, html {
 .grid-broadcast-car-desc {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.88rem;
+  gap: 7px;
+  font-size: 0.84rem;
   color: #cbd5e1;
   white-space: nowrap;
   overflow: hidden;
@@ -2029,6 +2063,7 @@ body, html {
   transform: skewX(-25deg);
   animation: gbGlimmer 3s infinite;
   pointer-events: none;
+  z-index: 3;
 }
 
 @keyframes gbSlideIn {
@@ -2043,9 +2078,12 @@ body, html {
 }
 
 .grid-intro-footer {
-  text-align: center;
-  padding-top: 6px;
+  position: absolute;
+  bottom: 24px;
+  right: 36px;
+  text-align: right;
   pointer-events: auto;
+  z-index: 30;
 }
 
 .grid-intro-hint {
@@ -2062,6 +2100,26 @@ body, html {
   color: #fff;
   font-family: var(--font-display);
   font-weight: 700;
+}
+
+@media (max-width: 820px) {
+  .grid-broadcast-wrap {
+    left: 14px;
+    bottom: 46px;
+  }
+  .grid-broadcast-card {
+    width: 260px;
+    max-height: calc(100vh - 130px);
+  }
+  .grid-broadcast-photo-box {
+    height: 220px;
+  }
+  .grid-intro-footer {
+    left: 14px;
+    right: 14px;
+    bottom: 12px;
+    text-align: center;
+  }
 }
 
 @keyframes fadeInGrid {

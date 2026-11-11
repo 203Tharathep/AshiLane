@@ -122,19 +122,25 @@
       </button>
     </div>
 
-    <!-- TV Broadcast Lower-Third Live Racer Card -->
+    <!-- TV Broadcast Showcase Card (Docked Bottom-Left to avoid covering 3D cars) -->
     <div class="grid-broadcast-wrap">
       <div id="grid-broadcast-card" class="grid-broadcast-card">
-        <div class="grid-broadcast-pos-badge" id="gb-pos">7</div>
-        <div class="grid-broadcast-avatar-frame" id="gb-avatar-wrap">
-          <img id="gb-avatar" src="" alt="Driver" />
-          <div class="gb-avatar-glow" id="gb-avatar-glow"></div>
-        </div>
-        <div class="grid-broadcast-details">
-          <div class="grid-broadcast-meta-row">
-            <span class="gb-team-pill">🏎️ ASHI GRAND PRIX</span>
-            <span class="gb-role-pill" id="gb-badge">RIVAL RACER</span>
+        <!-- Big Full Photo Area -->
+        <div class="grid-broadcast-photo-box">
+          <img id="gb-photo" src="" alt="Racer Skin" class="grid-broadcast-photo" />
+          <div class="grid-broadcast-photo-vignette"></div>
+          
+          <div class="grid-broadcast-top-badges">
+            <div class="grid-broadcast-pos-badge" id="gb-pos">7</div>
+            <div class="grid-broadcast-meta-col">
+              <span class="gb-team-pill">🏎️ ASHI GRAND PRIX</span>
+              <span class="gb-role-pill" id="gb-badge">RIVAL RACER</span>
+            </div>
           </div>
+        </div>
+
+        <!-- Bottom Info Bar -->
+        <div class="grid-broadcast-info-bar">
           <div class="grid-broadcast-driver-name" id="gb-name">นักซิ่งอาชิ</div>
           <div class="grid-broadcast-car-desc" id="gb-car">
             <span class="gb-color-indicator" id="gb-color-dot"></span>
@@ -142,6 +148,7 @@
             <span class="gb-car-tag-pill" id="gb-car-tag">SPEED DEMON</span>
           </div>
         </div>
+
         <div class="grid-broadcast-glimmer"></div>
       </div>
     </div>
