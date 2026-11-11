@@ -59,9 +59,19 @@ export class Game {
     this.aiCars = [];
     this.remotePlayers = new Map(); // peerId -> { car, lastPacket }
 
-    // Garage Preview
+    // Garage Preview & 360 Turntable
     this.garageCarMesh = null;
-    this.garageAngle = 0;
+    this.garageGroup = null;
+    this.garageAngle = 0.5;
+    this.garagePitch = 0.26;
+    this.garageDistance = 6.0;
+    this.garageTargetAngle = 0.5;
+    this.garageTargetPitch = 0.26;
+    this.garageTargetDistance = 6.0;
+    this.garageAutoSpin = true;
+    this.garageIsDragging = false;
+    this.garageDragPrevX = 0;
+    this.garageDragPrevY = 0;
 
     // Multiplayer
     this.multiplayer = new MultiplayerManager(
@@ -186,14 +196,15 @@ export class Game {
     this.hud.setStage(trackDef.nameTh);
   }
 
-  setupPlayerCar(carConfig, skinFileName, color) {
+  setupPlayerCar(carConfig, skinFileName, color, addons = null) {
     if (this.playerCar && this.playerCar.model) {
       this.scene.remove(this.playerCar.model);
     }
 
     this.playerCar = new Car(carConfig, skinFileName, color, true);
     this.playerCar.game = this;
-    const builtModel = this.carBuilder.createCar(carConfig.id, skinFileName, color, false);
+    const appliedAddons = addons || this.ui?.currentAddons;
+    const builtModel = this.carBuilder.createCar(carConfig.id, skinFileName, color, false, appliedAddons);
     this.playerCar.setModel(builtModel);
     this.scene.add(this.playerCar.model);
 
@@ -211,7 +222,7 @@ export class Game {
     const row = Math.floor(gridIndex / 2);
     const col = (gridIndex % 2 === 0) ? -1 : 1;
     const lateralOffset = col * (this.track.roadWidth * 0.22);
-    const longitudinalOffset = -12 - (row * 10);
+    const longitudinalOffset = -10 - (row * 8.0);
 
     const pos = pt.clone()
       .addScaledVector(tangent, longitudinalOffset)
@@ -237,6 +248,27 @@ export class Game {
     this.state = 'RACING';
     this.audio.init();
 
+    // Ensure garage showcase items are closed and world visuals restored
+    if (this.garageCarMesh) {
+      this.scene.remove(this.garageCarMesh.root);
+      this.garageCarMesh = null;
+    }
+    if (this.garageGroup) {
+      this.garageGroup.visible = false;
+    }
+    if (this.track && this.track.group) {
+      this.track.group.visible = true;
+    }
+    if (this.decorations && this.decorations.group) {
+      this.decorations.group.visible = true;
+    }
+    if (this.prevSceneBackground) {
+      this.scene.background = this.prevSceneBackground;
+      this.scene.fog = this.prevSceneFog;
+      this.prevSceneBackground = null;
+      this.prevSceneFog = null;
+    }
+
     // 1. Load selected stage
     if (!this.track || this.track.def.id !== trackId) {
       this.loadTrack(trackId);
@@ -245,7 +277,7 @@ export class Game {
     // 2. Setup Player Car
     const playerConfig = this.ui.getPlayerConfig();
     const carConfig = CARS.find(c => c.id === playerConfig.carId) || CARS[0];
-    this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color);
+    this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color, playerConfig.addons);
     this.playerCar.totalLaps = laps;
 
     this.clearOpponents();
@@ -256,11 +288,12 @@ export class Game {
       const diffMul = DIFFICULTIES[difficulty]?.aiMul || 1.0;
 
       const aiRivalConfigs = [
-        { name: 'ชเร็ค อาชิ (Ogre)', car: 'truck', skin: 'Gemini_Generated_Image_9bccp39bccp39bcc.jpeg', color: '#38b000', lane: -2.8, skill: 0.90 },
+        { name: 'วัลคิรี อาชิ (Cyber)', car: 'hyper', skin: 'Gemini_Generated_Image_kwy6itkwy6itkwy6.jpeg', color: '#00f0ff', lane: -2.8, skill: 0.93 },
         { name: 'บิกินี่แดง อาชิ (Hot)', car: 'gt', skin: 'qwen_edit_20261004_234512.png', color: '#ff0033', lane: 2.8, skill: 0.92 },
-        { name: 'นกบอมบ์ อาชิ (Bomb)', car: 'muscle', skin: 'Gemini_Generated_Image_w62h0zw62h0zw62h.jpg', color: '#222222', lane: -3.2, skill: 0.88 },
+        { name: 'แรลลี่ อสูร อาชิ', car: 'rally', skin: 'Gemini_Generated_Image_w62h0zw62h0zw62h.jpg', color: '#ff0055', lane: -3.2, skill: 0.89 },
         { name: 'เสี่ยอาชิ (CEO)', car: 'f1', skin: 'Gemini_Generated_Image_t2e45ct2e45ct2e4.jpeg', color: '#ffd700', lane: 3.2, skill: 0.94 },
-        { name: 'หนอนลาวา อาชิ', car: 'kart', skin: 'Gemini_Generated_Image_kwy6itkwy6itkwy6.jpeg', color: '#ff6600', lane: 0.0, skill: 0.86 }
+        { name: 'ชเร็ค อาชิ (Ogre)', car: 'truck', skin: 'Gemini_Generated_Image_9bccp39bccp39bcc.jpeg', color: '#38b000', lane: -1.2, skill: 0.90 },
+        { name: 'คลาสสิก อาชิ', car: 'speedster', skin: 'Gemini_Generated_Image_ovar5lovar5lovar.jpeg', color: '#e0e7ff', lane: 1.2, skill: 0.88 }
       ];
 
       aiRivalConfigs.forEach((cfg, idx) => {
@@ -278,15 +311,269 @@ export class Game {
       });
     }
 
+    // Build Starting Lineup Array for the snappy showcase
+    const lineupRacers = [
+      {
+        name: this.ui.playerName,
+        carName: carConfig.nameTh,
+        carTag: carConfig.tag || carConfig.name,
+        carId: carConfig.id,
+        skinFileName: playerConfig.skinFileName,
+        color: playerConfig.color,
+        isPlayer: true
+      }
+    ];
+
+    this.aiCars.forEach(ai => {
+      lineupRacers.push({
+        name: ai.name,
+        carName: ai.config?.nameTh || 'รถซิ่งอาชิ',
+        carTag: ai.config?.tag || ai.config?.name || 'RIVAL',
+        carId: ai.config?.id || 'gt',
+        skinFileName: ai.skinFileName,
+        color: ai.bodyColor,
+        isPlayer: false
+      });
+    });
+
+    const stageTitle = this.track?.def ? `${this.track.def.icon || '🏁'} ${this.track.def.nameTh} (${this.track.def.name})` : 'STARTING GRID';
+
+    // Snappy starting grid showcase before countdown
+    this.playGridIntro(lineupRacers, stageTitle, () => this.startCountdown());
+  }
+
+  playGridIntro(racers, stageTitle, onComplete) {
+    this.state = 'GRID_INTRO';
+    this.gridIntroTimer = 0;
+    this.gridIntroDuration = 6.2; // 6.2s TV broadcast cinematic on-track camera sweep
+    this.gridIntroRacers = racers || [];
+    this.gridIntroOnComplete = onComplete;
+    this.countdownActive = true;
+    this.isRacing = false;
+    this.lastGridFocusedIndex = -1;
+
+    // Freeze all cars on grid
+    if (this.playerCar) {
+      this.playerCar.speed = 0;
+      this.playerCar.velocity.set(0, 0, 0);
+      this.playerCar.inputs.throttle = 0;
+      this.playerCar.inputs.steer = 0;
+      this.playerCar.inputs.boost = false;
+      this.playerCar.inputs.drift = false;
+    }
+
+    this.aiCars.forEach(ai => {
+      ai.speed = 0;
+      ai.velocity.set(0, 0, 0);
+      ai.inputs.throttle = 0;
+      ai.inputs.steer = 0;
+      ai.inputs.boost = false;
+      ai.inputs.drift = false;
+    });
+
+    if (this.audio && this.audio.playGridIntroSwoosh) {
+      this.audio.playGridIntroSwoosh();
+    }
+
+    if (this.track && this.track.samplePos && this.track.samplePos.length > 0) {
+      const pt = this.track.samplePos[0];
+      const tangent = this.track.sampleTan[0];
+      const normal = this.track.sampleNorm[0];
+
+      // Calculate starting grid bounds based on total racers
+      const totalCars = Math.max(1, this.gridIntroRacers.length);
+      const maxRow = Math.max(1, Math.floor((totalCars - 1) / 2));
+      this.gridRearZ = -10.0 - (maxRow * 8.0); // Longitudinal offset of back row (e.g. -34m)
+      this.gridFrontZ = -10.0;                 // Longitudinal offset of pole position
+      this.gridStartZ = this.gridRearZ - 10.0; // Camera starting glide position behind back row
+      this.gridEndZ = this.gridFrontZ + 3.0;   // Camera tracking endpoint at pole position
+
+      // Initial camera setup looking down from behind the grid
+      const camStart = pt.clone()
+        .addScaledVector(tangent, this.gridStartZ)
+        .addScaledVector(normal, 5.5)
+        .add(new THREE.Vector3(0, 1.4, 0));
+
+      const lookStart = pt.clone()
+        .addScaledVector(tangent, this.gridRearZ)
+        .addScaledVector(normal, -1.0)
+        .add(new THREE.Vector3(0, 0.85, 0));
+
+      this.camera.position.copy(camStart);
+      this.camera.lookAt(lookStart);
+      this.camera.fov = 60;
+      this.camera.updateProjectionMatrix();
+    }
+
+    this.ui.showGridIntro(racers, stageTitle, () => this.finishGridIntro());
+  }
+
+  updateGridIntro(delta) {
+    this.gridIntroTimer += delta;
+
+    const duration = this.gridIntroDuration;
+    const timer = this.gridIntroTimer;
+
+    if (timer >= duration) {
+      this.finishGridIntro();
+      return;
+    }
+
+    if (this.track && this.track.samplePos && this.track.samplePos.length > 0) {
+      const pt = this.track.samplePos[0];
+      const tangent = this.track.sampleTan[0];
+      const normal = this.track.sampleNorm[0];
+
+      const phase1Duration = duration * 0.76; // 0 to ~4.7s: Grid glide
+
+      if (timer < phase1Duration) {
+        // --- Phase 1: Smooth Glide Alongside Entire Starting Grid ---
+        const p = timer / phase1Duration;
+        // Smooth sinusoidal ease
+        const easeP = p * p * (3 - 2 * p);
+
+        const currentZ = this.gridStartZ + easeP * (this.gridEndZ - this.gridStartZ);
+        // Weave gently along the right-hand kerb of the track
+        const currentLat = 5.2 + Math.sin(easeP * Math.PI) * 0.9;
+        // Crane height: low dynamic angle rising to mid-height, then descending near P1
+        const currentH = 1.35 + Math.sin(easeP * Math.PI) * 1.05;
+
+        // Dynamic lookAt: looking ahead and weaving across left and right car rows
+        const lookZ = currentZ + 7.5;
+        const lookLat = -0.5 + Math.sin(easeP * Math.PI * 3.2) * 2.5;
+        const lookH = 0.85;
+
+        const camPos = pt.clone()
+          .addScaledVector(tangent, currentZ)
+          .addScaledVector(normal, currentLat)
+          .add(new THREE.Vector3(0, currentH, 0));
+
+        const lookTarget = pt.clone()
+          .addScaledVector(tangent, lookZ)
+          .addScaledVector(normal, lookLat)
+          .add(new THREE.Vector3(0, lookH, 0));
+
+        this.camera.position.copy(camPos);
+        this.camera.lookAt(lookTarget);
+
+        // Calculate currently focused racer (from rear car P7 to pole car P1)
+        const total = this.gridIntroRacers.length;
+        if (total > 0) {
+          const carProgress = THREE.MathUtils.clamp(easeP, 0, 1);
+          const focusIndex = Math.min(total - 1, Math.max(0, Math.round((1 - carProgress) * (total - 1))));
+          if (focusIndex !== this.lastGridFocusedIndex) {
+            this.lastGridFocusedIndex = focusIndex;
+            this.ui.updateGridBroadcast(focusIndex);
+          }
+        }
+      } else {
+        // --- Phase 2: Orbit Player's Car & Swoop Smoothly Behind for Launch ---
+        const phase2Start = phase1Duration;
+        const p2 = THREE.MathUtils.clamp((timer - phase2Start) / (duration - phase2Start), 0, 1);
+        const u = p2 * p2 * (3 - 2 * p2);
+
+        // Highlight P1 (Player, Pole Position)
+        if (this.lastGridFocusedIndex !== 0) {
+          this.lastGridFocusedIndex = 0;
+          this.ui.updateGridBroadcast(0);
+        }
+
+        const playerPos = this.playerCar ? this.playerCar.position : pt;
+        const playerRotY = this.playerCar ? this.playerCar.rotationY : 0;
+
+        // Start point of Phase 2 (end of grid pan)
+        const p2StartPos = pt.clone()
+          .addScaledVector(tangent, this.gridEndZ)
+          .addScaledVector(normal, 5.2)
+          .add(new THREE.Vector3(0, 1.35, 0));
+        const p2StartLook = playerPos.clone().add(new THREE.Vector3(0, 0.9, 0));
+
+        // Mid-curve apex: swooping past front bumper/quarter
+        const p2MidPos = playerPos.clone()
+          .addScaledVector(tangent, 3.2)
+          .addScaledVector(normal, 2.8)
+          .add(new THREE.Vector3(0, 2.2, 0));
+
+        // Target chase cam position
+        const chaseOffset = this.cameraOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+        const chaseCamPos = playerPos.clone().add(chaseOffset);
+
+        const lookTargetOffset = this.cameraLookOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+        const chaseLookTarget = playerPos.clone().add(lookTargetOffset);
+
+        // Quadratic Bezier interpolation into chase cam
+        const inv = 1 - u;
+        const inv2 = inv * inv;
+        const u2 = u * u;
+        const invU2 = 2 * inv * u;
+
+        const camX = inv2 * p2StartPos.x + invU2 * p2MidPos.x + u2 * chaseCamPos.x;
+        const camY = inv2 * p2StartPos.y + invU2 * p2MidPos.y + u2 * chaseCamPos.y;
+        const camZ = inv2 * p2StartPos.z + invU2 * p2MidPos.z + u2 * chaseCamPos.z;
+
+        this.camera.position.set(camX, camY, camZ);
+
+        const curLook = p2StartLook.clone().lerp(chaseLookTarget, u);
+        this.camera.lookAt(curLook);
+        this.camera.fov = THREE.MathUtils.lerp(60, 65, u);
+        this.camera.updateProjectionMatrix();
+      }
+    }
+
+    // Keep car models alive (wheels, underglow, shader idle visuals)
+    if (this.playerCar) this.playerCar.updateVisuals(delta);
+    this.aiCars.forEach(ai => ai.updateVisuals(delta));
+    this.remotePlayers.forEach(r => {
+      if (r.car) r.car.updateVisuals(delta);
+    });
+  }
+
+  finishGridIntro() {
+    if (this.state !== 'GRID_INTRO') return;
+
+    // Immediately snap camera to chase position behind player car
+    if (this.playerCar) {
+      const playerPos = this.playerCar.position;
+      const playerRotY = this.playerCar.rotationY;
+      const chaseOffset = this.cameraOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+      this.camera.position.copy(playerPos).add(chaseOffset);
+
+      const lookTargetOffset = this.cameraLookOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+      this.camera.lookAt(playerPos.clone().add(lookTargetOffset));
+      this.camera.fov = 65;
+      this.camera.updateProjectionMatrix();
+    }
+
+    this.ui.hideGridIntro();
     this.ui.showView('hud');
-    this.startCountdown();
+    this.state = 'RACING';
+
+    if (this.gridIntroOnComplete) {
+      const cb = this.gridIntroOnComplete;
+      this.gridIntroOnComplete = null;
+      cb();
+    }
   }
 
   startCountdown() {
     this.countdownActive = true;
     this.isRacing = false;
-    this.playerCar.speed = 0;
-    this.playerCar.inputs.throttle = 0;
+
+    if (this.playerCar) {
+      this.playerCar.speed = 0;
+      this.playerCar.inputs.throttle = 0;
+      this.playerCar.inputs.steer = 0;
+      this.playerCar.inputs.boost = false;
+      this.playerCar.inputs.drift = false;
+    }
+
+    this.aiCars.forEach(ai => {
+      ai.speed = 0;
+      ai.inputs.throttle = 0;
+      ai.inputs.steer = 0;
+      ai.inputs.boost = false;
+      ai.inputs.drift = false;
+    });
 
     if (this.track && this.track.setStartLights) {
       this.track.setStartLights(0, false);
@@ -341,6 +628,27 @@ export class Game {
     this.state = 'RACING';
     this.audio.init();
 
+    // Ensure garage showcase items are closed and world visuals restored
+    if (this.garageCarMesh) {
+      this.scene.remove(this.garageCarMesh.root);
+      this.garageCarMesh = null;
+    }
+    if (this.garageGroup) {
+      this.garageGroup.visible = false;
+    }
+    if (this.track && this.track.group) {
+      this.track.group.visible = true;
+    }
+    if (this.decorations && this.decorations.group) {
+      this.decorations.group.visible = true;
+    }
+    if (this.prevSceneBackground) {
+      this.scene.background = this.prevSceneBackground;
+      this.scene.fog = this.prevSceneFog;
+      this.prevSceneBackground = null;
+      this.prevSceneFog = null;
+    }
+
     const settings = packet.settings || {};
     const trackId = settings.trackId || 'beach';
     const laps = settings.laps || 3;
@@ -352,7 +660,7 @@ export class Game {
 
     const playerConfig = this.ui.getPlayerConfig();
     const carConfig = CARS.find(c => c.id === playerConfig.carId) || CARS[0];
-    this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color);
+    this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color, playerConfig.addons);
     this.playerCar.totalLaps = laps;
 
     this.clearOpponents();
@@ -401,8 +709,35 @@ export class Game {
       }
     }
 
-    this.ui.showView('hud');
-    this.startCountdown();
+    const lineupRacers = [];
+    playersList.forEach(p => {
+      const isMe = p.id === this.multiplayer.localPlayerId;
+      const cDef = CARS.find(c => c.id === p.carId) || CARS[0];
+      lineupRacers.push({
+        name: p.name,
+        carName: cDef.nameTh,
+        carTag: cDef.tag || cDef.name,
+        carId: cDef.id,
+        skinFileName: p.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg',
+        color: p.color,
+        isPlayer: isMe
+      });
+    });
+
+    this.aiCars.forEach(ai => {
+      lineupRacers.push({
+        name: ai.name,
+        carName: ai.config?.nameTh || 'รถซิ่งอาชิ',
+        carTag: ai.config?.tag || ai.config?.name || 'RIVAL',
+        carId: ai.config?.id || 'gt',
+        skinFileName: ai.skinFileName,
+        color: ai.bodyColor,
+        isPlayer: false
+      });
+    });
+
+    const stageTitle = this.track?.def ? `${this.track.def.icon || '🏁'} ${this.track.def.nameTh}` : 'MULTIPLAYER GRID';
+    this.playGridIntro(lineupRacers, stageTitle, () => this.startCountdown());
   }
 
   onRemoteRacerTransform(data) {
@@ -433,31 +768,585 @@ export class Game {
     }
   }
 
-  // --- Garage Preview ---
-  enterGaragePreview(carId, skinFileName, color) {
-    this.state = 'GARAGE';
-    if (this.garageCarMesh) {
-      this.scene.remove(this.garageCarMesh.root);
+  // --- Garage Preview & 360 Turntable ---
+  setupGarageEnvironment() {
+    if (this.garageGroup) return;
+
+    this.garageGroup = new THREE.Group();
+    this.garageGroup.name = 'GarageShowroom';
+
+    const cx = 0.3; // Center alignment matching turntable and car
+    const cz = 0.0;
+
+    // 1. High-Gloss Epoxy Showroom Floor
+    const floorGeo = new THREE.PlaneGeometry(36, 36);
+    floorGeo.rotateX(-Math.PI / 2);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0c0f18,
+      roughness: 0.18,
+      metalness: 0.65
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.position.set(cx, -0.01, cz);
+    floorMesh.receiveShadow = true;
+    this.garageGroup.add(floorMesh);
+
+    // Staging Perimeter Floor Lines (Cyan Neon Boundary)
+    const stageLineMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.45 });
+    const makeFloorLine = (w, h, px, pz) => {
+      const g = new THREE.PlaneGeometry(w, h);
+      g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, stageLineMat);
+      m.position.set(px, 0.005, pz);
+      this.garageGroup.add(m);
+    };
+    makeFloorLine(11.0, 0.08, cx, cz - 5.5);
+    makeFloorLine(11.0, 0.08, cx, cz + 5.5);
+    makeFloorLine(0.08, 11.0, cx - 5.5, cz);
+    makeFloorLine(0.08, 11.0, cx + 5.5, cz);
+
+    // Hazard Stripes Staging Decals at Corners
+    if (typeof document !== 'undefined') {
+      const hazardCanvas = document.createElement('canvas');
+      hazardCanvas.width = 256;
+      hazardCanvas.height = 32;
+      const hCtx = hazardCanvas.getContext('2d');
+      if (hCtx) {
+        hCtx.fillStyle = '#0a0d14';
+        hCtx.fillRect(0, 0, 256, 32);
+        hCtx.fillStyle = '#f59e0b';
+        for (let i = -32; i < 288; i += 32) {
+          hCtx.beginPath();
+          hCtx.moveTo(i, 32);
+          hCtx.lineTo(i + 20, 0);
+          hCtx.lineTo(i + 36, 0);
+          hCtx.lineTo(i + 16, 32);
+          hCtx.closePath();
+          hCtx.fill();
+        }
+        const hazardTex = new THREE.CanvasTexture(hazardCanvas);
+        hazardTex.wrapS = THREE.RepeatWrapping;
+        hazardTex.repeat.set(4, 1);
+        const hazardMat = new THREE.MeshBasicMaterial({ map: hazardTex });
+        const hStrip1 = new THREE.Mesh(new THREE.PlaneGeometry(8, 0.28), hazardMat);
+        hStrip1.rotateX(-Math.PI / 2);
+        hStrip1.position.set(cx, 0.006, cz - 5.7);
+        const hStrip2 = new THREE.Mesh(new THREE.PlaneGeometry(8, 0.28), hazardMat);
+        hStrip2.rotateX(-Math.PI / 2);
+        hStrip2.position.set(cx, 0.006, cz + 5.7);
+        this.garageGroup.add(hStrip1, hStrip2);
+      }
     }
 
-    this.garageCarMesh = this.carBuilder.createCar(carId, skinFileName, color, false);
-    this.garageCarMesh.root.position.set(0, 0.9, 0);
+    // 2. High-Tech Turntable Platform
+    const platformGeo = new THREE.CylinderGeometry(3.7, 3.95, 0.24, 64);
+    const platformMat = new THREE.MeshStandardMaterial({
+      color: 0x141620,
+      metalness: 0.84,
+      roughness: 0.2
+    });
+    const platform = new THREE.Mesh(platformGeo, platformMat);
+    platform.position.set(cx, 0.12, cz);
+    platform.receiveShadow = true;
+    this.garageGroup.add(platform);
+
+    // Top Disc with brushed metallic finish
+    const topDiscGeo = new THREE.CylinderGeometry(3.58, 3.58, 0.02, 64);
+    const topDiscMat = new THREE.MeshStandardMaterial({
+      color: 0x1e2230,
+      metalness: 0.9,
+      roughness: 0.32
+    });
+    const topDisc = new THREE.Mesh(topDiscGeo, topDiscMat);
+    topDisc.position.set(cx, 0.245, cz);
+    topDisc.receiveShadow = true;
+    this.garageGroup.add(topDisc);
+
+    // Outer Neon Glow Ring
+    const neonRingGeo = new THREE.TorusGeometry(3.8, 0.035, 16, 64);
+    neonRingGeo.rotateX(Math.PI / 2);
+    const neonRingMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+    const neonRing = new THREE.Mesh(neonRingGeo, neonRingMat);
+    neonRing.position.set(cx, 0.24, cz);
+    this.garageGroup.add(neonRing);
+
+    // Inner Grid Circle
+    const innerRingGeo = new THREE.TorusGeometry(2.35, 0.015, 16, 64);
+    innerRingGeo.rotateX(Math.PI / 2);
+    const innerRingMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0.4 });
+    const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+    innerRing.position.set(cx, 0.25, cz);
+    this.garageGroup.add(innerRing);
+
+    // Crosshair alignment marks on turntable
+    const markGeo = new THREE.PlaneGeometry(0.04, 0.6);
+    markGeo.rotateX(-Math.PI / 2);
+    const markMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.5 });
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(markGeo, markMat);
+      const angle = (i * Math.PI) / 2;
+      m.position.set(cx + Math.sin(angle) * 2.8, 0.252, cz + Math.cos(angle) * 2.8);
+      m.rotation.y = angle;
+      this.garageGroup.add(m);
+    }
+
+    // Luminous Center Light Disc (Glow Puddle on Turntable)
+    if (typeof document !== 'undefined') {
+      const puddleCanvas = document.createElement('canvas');
+      puddleCanvas.width = 256;
+      puddleCanvas.height = 256;
+      const pCtx = puddleCanvas.getContext('2d');
+      if (pCtx) {
+        const radGrad = pCtx.createRadialGradient(128, 128, 10, 128, 128, 128);
+        radGrad.addColorStop(0, 'rgba(0, 243, 255, 0.55)');
+        radGrad.addColorStop(0.35, 'rgba(0, 210, 255, 0.28)');
+        radGrad.addColorStop(0.75, 'rgba(0, 210, 255, 0.08)');
+        radGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        pCtx.fillStyle = radGrad;
+        pCtx.fillRect(0, 0, 256, 256);
+        const puddleTex = new THREE.CanvasTexture(puddleCanvas);
+        const puddleMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(7.2, 7.2),
+          new THREE.MeshBasicMaterial({
+            map: puddleTex,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          })
+        );
+        puddleMesh.rotateX(-Math.PI / 2);
+        puddleMesh.position.set(cx, 0.248, cz);
+        this.garageGroup.add(puddleMesh);
+      }
+    }
+
+    // 8 Stage Rim Uplight Beacons around Turntable
+    const podChromeMat = new THREE.MeshStandardMaterial({ color: 0x222638, metalness: 0.9, roughness: 0.2 });
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI) / 4;
+      const lx = cx + Math.sin(angle) * 3.82;
+      const lz = cz + Math.cos(angle) * 3.82;
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.12, 0.10, 16), podChromeMat);
+      pod.position.set(lx, 0.26, lz);
+      const lensColor = i % 2 === 0 ? 0x00f3ff : 0xffffff;
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), new THREE.MeshBasicMaterial({ color: lensColor }));
+      lens.rotateX(-Math.PI / 2);
+      lens.position.set(lx, 0.312, lz);
+      const uplight = new THREE.PointLight(lensColor, 0.95, 4.8);
+      uplight.position.set(lx, 0.40, lz);
+      this.garageGroup.add(pod, lens, uplight);
+    }
+
+    // Volumetric Spotlight Beam (Translucent light shaft shining down onto car)
+    const coneGeo = new THREE.CylinderGeometry(0.7, 3.8, 6.2, 32, 1, true);
+    const coneMat = new THREE.MeshBasicMaterial({
+      color: 0x88e8ff,
+      transparent: true,
+      opacity: 0.08,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const lightBeam = new THREE.Mesh(coneGeo, coneMat);
+    lightBeam.position.set(cx, 3.4, cz);
+    this.garageGroup.add(lightBeam);
+
+    // Overhead Circular Studio Lighting Truss at Y = 5.6m
+    const trussRing = new THREE.Mesh(
+      new THREE.TorusGeometry(3.6, 0.06, 12, 32),
+      new THREE.MeshStandardMaterial({ color: 0x2a3045, metalness: 0.85, roughness: 0.25 })
+    );
+    trussRing.rotateX(Math.PI / 2);
+    trussRing.position.set(cx, 5.6, cz);
+    this.garageGroup.add(trussRing);
+
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      const sx = cx + Math.sin(a) * 3.6;
+      const sz = cz + Math.cos(a) * 3.6;
+      const spotHousing = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.16, 0.32, 12),
+        podChromeMat
+      );
+      spotHousing.position.set(sx, 5.46, sz);
+      spotHousing.lookAt(cx, 0.5, cz);
+      this.garageGroup.add(spotHousing);
+    }
+
+    // 3. --- SHOWROOM 3D ARCHITECTURAL WALLS & BACKGROUND ---
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x111420,
+      roughness: 0.68,
+      metalness: 0.35
+    });
+    const columnMat = new THREE.MeshStandardMaterial({
+      color: 0x181c2c,
+      roughness: 0.52,
+      metalness: 0.55
+    });
+
+    // BACK WALL (Z = cz - 12.6)
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(28, 8.5, 0.5), wallMat);
+    backWall.position.set(cx, 4.25, cz - 12.6);
+    this.garageGroup.add(backWall);
+
+    // Architectural Vertical Columns along Back Wall
+    [-11, -7.5, -4, 0.3, 4.5, 8, 11.5].forEach(colX => {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(0.45, 8.5, 0.35), columnMat);
+      col.position.set(colX, 4.25, cz - 12.4);
+      this.garageGroup.add(col);
+    });
+
+    // Horizontal Neon Accent Tubes on Back Wall
+    const neonWallCyan = new THREE.Mesh(
+      new THREE.BoxGeometry(27.6, 0.06, 0.08),
+      new THREE.MeshBasicMaterial({ color: 0x00f3ff })
+    );
+    neonWallCyan.position.set(cx, 1.4, cz - 12.3);
+    const neonWallAmber = new THREE.Mesh(
+      new THREE.BoxGeometry(27.6, 0.06, 0.08),
+      new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+    );
+    neonWallAmber.position.set(cx, 5.2, cz - 12.3);
+    this.garageGroup.add(neonWallCyan, neonWallAmber);
+
+    // Massive 3D Illuminated Centerpiece Neon Billboard ("ASHI MOTORSPORT")
+    if (typeof document !== 'undefined') {
+      const signCanvas = document.createElement('canvas');
+      signCanvas.width = 1024;
+      signCanvas.height = 256;
+      const sCtx = signCanvas.getContext('2d');
+      if (sCtx) {
+        // Dark Carbon Weave Texture
+        sCtx.fillStyle = '#0a0d18';
+        sCtx.fillRect(0, 0, 1024, 256);
+        sCtx.strokeStyle = '#00f3ff';
+        sCtx.lineWidth = 6;
+        sCtx.strokeRect(12, 12, 1000, 232);
+
+        // Inner glowing bevel
+        sCtx.strokeStyle = '#ff0077';
+        sCtx.lineWidth = 2;
+        sCtx.strokeRect(20, 20, 984, 216);
+
+        // Main Title
+        sCtx.fillStyle = '#00f3ff';
+        sCtx.font = 'bold 74px "Kanit", sans-serif';
+        sCtx.textAlign = 'center';
+        sCtx.shadowColor = '#00f3ff';
+        sCtx.shadowBlur = 24;
+        sCtx.fillText('⚡ ASHI MOTORSPORT ⚡', 512, 105);
+
+        // Subtitle
+        sCtx.shadowBlur = 10;
+        sCtx.shadowColor = '#ffd700';
+        sCtx.fillStyle = '#ffd700';
+        sCtx.font = '600 32px "Kanit", sans-serif';
+        sCtx.fillText('360° HYPER TUNING SHOWROOM • DIVISION 01', 512, 165);
+
+        // Kanji / Japanese badge
+        sCtx.shadowBlur = 0;
+        sCtx.fillStyle = '#94a3b8';
+        sCtx.font = 'bold 24px monospace';
+        sCtx.fillText('「 アシ・レーシング • TOKYO SPEED LAB 」', 512, 212);
+
+        const signTex = new THREE.CanvasTexture(signCanvas);
+        const signMat = new THREE.MeshBasicMaterial({ map: signTex });
+        const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(8.8, 2.3), signMat);
+        signMesh.position.set(cx, 5.2, cz - 12.3);
+
+        const signBacking = new THREE.Mesh(
+          new THREE.BoxGeometry(9.0, 2.5, 0.12),
+          new THREE.MeshStandardMaterial({ color: 0x060810, metalness: 0.9, roughness: 0.2 })
+        );
+        signBacking.position.set(cx, 5.2, cz - 12.37);
+
+        this.garageGroup.add(signBacking, signMesh);
+      }
+    }
+
+    // LEFT WALL (X = cx - 13.5) - Industrial Sectional Glass Garage Bay Door
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 8.5, 26), wallMat);
+    leftWall.position.set(cx - 13.5, 4.25, cz);
+    this.garageGroup.add(leftWall);
+
+    // Sectional Glass Roll-up Door Panels
+    const glassDoorMat = new THREE.MeshStandardMaterial({
+      color: 0x142032,
+      roughness: 0.2,
+      metalness: 0.85,
+      transparent: true,
+      opacity: 0.75
+    });
+    const doorFrameMat = new THREE.MeshStandardMaterial({ color: 0x222638, metalness: 0.8, roughness: 0.3 });
+    const garageDoor = new THREE.Mesh(new THREE.BoxGeometry(0.18, 5.8, 14), glassDoorMat);
+    garageDoor.position.set(cx - 13.2, 3.0, cz);
+    const garageDoorFrame = new THREE.Mesh(new THREE.BoxGeometry(0.3, 6.2, 14.5), doorFrameMat);
+    garageDoorFrame.position.set(cx - 13.2, 3.2, cz);
+    this.garageGroup.add(garageDoor, garageDoorFrame);
+
+    // Overhead Door Rollup Canister Drum
+    const rollDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 14.6, 24), doorFrameMat);
+    rollDrum.position.set(cx - 13.1, 6.5, cz);
+    this.garageGroup.add(rollDrum);
+
+    // Wall-Mounted Status Terminal on Left Wall
+    if (typeof document !== 'undefined') {
+      const termCanvas = document.createElement('canvas');
+      termCanvas.width = 512;
+      termCanvas.height = 256;
+      const tCtx = termCanvas.getContext('2d');
+      if (tCtx) {
+        tCtx.fillStyle = '#060a14';
+        tCtx.fillRect(0, 0, 512, 256);
+        tCtx.strokeStyle = '#00f3ff';
+        tCtx.lineWidth = 4;
+        tCtx.strokeRect(6, 6, 500, 244);
+        tCtx.fillStyle = '#00f3ff';
+        tCtx.font = 'bold 36px "Kanit", sans-serif';
+        tCtx.fillText('BAY 01 // ACTIVE', 30, 60);
+        tCtx.fillStyle = '#10b981';
+        tCtx.font = '28px monospace';
+        tCtx.fillText('STATUS: DYNO READY', 30, 110);
+        tCtx.fillStyle = '#f59e0b';
+        tCtx.fillText('TEMP: 21°C  HUMID: 48%', 30, 155);
+        tCtx.fillStyle = '#94a3b8';
+        tCtx.fillText('ECU TELEMETRY: CONNECTED', 30, 205);
+
+        const termTex = new THREE.CanvasTexture(termCanvas);
+        const termMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(2.4, 1.2),
+          new THREE.MeshBasicMaterial({ map: termTex })
+        );
+        termMesh.position.set(cx - 13.2, 3.4, cz - 8.2);
+        termMesh.rotation.y = Math.PI / 2;
+        this.garageGroup.add(termMesh);
+      }
+    }
+
+    // RIGHT WALL (X = cx + 13.5) - Professional Supercar Tuning Workshop
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 8.5, 26), wallMat);
+    rightWall.position.set(cx + 13.5, 4.25, cz);
+    this.garageGroup.add(rightWall);
+
+    // 1) Snap-On Red Mechanic Tool Cabinet Workstation
+    const toolRedMat = new THREE.MeshStandardMaterial({ color: 0xd90429, metalness: 0.65, roughness: 0.25 });
+    const chromeMat = new THREE.MeshStandardMaterial({ color: 0xf8f9fa, metalness: 0.95, roughness: 0.1 });
+    const toolBody = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.85, 3.8), toolRedMat);
+    toolBody.position.set(cx + 12.9, 0.95, cz - 2.5);
+
+    // Chrome Drawer Handles on Tool Cabinet
+    [-0.8, -0.4, 0, 0.4, 0.8].forEach(dy => {
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 3.2), chromeMat);
+      handle.position.set(cx + 12.43, 0.95 + dy * 0.7, cz - 2.5);
+      this.garageGroup.add(handle);
+    });
+    this.garageGroup.add(toolBody);
+
+    // Mechanic Workstation Laptop on Top of Cabinet
+    const laptopBase = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.55), chromeMat);
+    laptopBase.position.set(cx + 12.8, 1.9, cz - 2.5);
+    const laptopScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(0.02, 0.35, 0.55),
+      new THREE.MeshBasicMaterial({ color: 0x00f3ff })
+    );
+    laptopScreen.position.set(cx + 12.95, 2.06, cz - 2.5);
+    laptopScreen.rotation.z = -0.15;
+    this.garageGroup.add(laptopBase, laptopScreen);
+
+    // 2) Stacks of Racing Slick Tires on Vertical Storage Racks
+    const tireMat = new THREE.MeshStandardMaterial({ color: 0x16161a, roughness: 0.9, metalness: 0.1 });
+    const yellowSidewallMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+    const makeTire = (px, py, pz) => {
+      const tGroup = new THREE.Group();
+      tGroup.position.set(px, py, pz);
+      const tMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.36, 24), tireMat);
+      tMesh.rotateZ(Math.PI / 2);
+      const stripeL = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.015, 8, 24), yellowSidewallMat);
+      stripeL.rotateY(Math.PI / 2);
+      stripeL.position.x = -0.185;
+      tGroup.add(tMesh, stripeL);
+      return tGroup;
+    };
+
+    // Stacks of 4 tires
+    for (let i = 0; i < 4; i++) {
+      this.garageGroup.add(makeTire(cx + 12.9, 0.2 + i * 0.38, cz + 2.0));
+      this.garageGroup.add(makeTire(cx + 12.9, 0.2 + i * 0.38, cz + 3.2));
+    }
+
+    // 3) Racing Fuel Drums (102 Octane)
+    const drumOrangeMat = new THREE.MeshStandardMaterial({ color: 0xea580c, metalness: 0.6, roughness: 0.3 });
+    const drumBlackMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.7, roughness: 0.3 });
+    const makeDrum = (px, pz, mat) => {
+      const d = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.15, 24), mat);
+      d.position.set(px, 0.58, pz);
+      const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.02, 8, 24), chromeMat);
+      ring1.rotateX(Math.PI / 2);
+      ring1.position.y = 0.25;
+      const ring2 = ring1.clone();
+      ring2.position.y = -0.25;
+      d.add(ring1, ring2);
+      return d;
+    };
+    this.garageGroup.add(
+      makeDrum(cx + 12.8, cz - 6.2, drumOrangeMat),
+      makeDrum(cx + 12.8, cz - 7.2, drumBlackMat),
+      makeDrum(cx + 12.0, cz - 6.7, drumOrangeMat)
+    );
+
+    // CEILING (Y = 8.2) with Exposed Steel Trusses
+    const ceilingGeo = new THREE.PlaneGeometry(36, 36);
+    ceilingGeo.rotateX(Math.PI / 2);
+    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x080a12, roughness: 0.9, metalness: 0.2 });
+    const ceiling = new THREE.Mesh(ceilingGeo, ceilingMat);
+    ceiling.position.set(cx, 8.2, cz);
+    this.garageGroup.add(ceiling);
+
+    // Steel Structural Trusses across ceiling
+    const trussMat = new THREE.MeshStandardMaterial({ color: 0x1e2436, metalness: 0.8, roughness: 0.3 });
+    [-8, -3, 2, 7].forEach(tz => {
+      const truss = new THREE.Mesh(new THREE.BoxGeometry(27.4, 0.45, 0.35), trussMat);
+      truss.position.set(cx, 7.8, cz + tz);
+      this.garageGroup.add(truss);
+    });
+
+    // 4. --- MODERN HEXAGONAL HONEYCOMB STUDIO CEILING LED GRID ---
+    // Iconic supercar detailing bay ceiling lights with glowing white/cyan tubes
+    const hexGroup = new THREE.Group();
+    hexGroup.position.set(cx, 7.55, cz);
+    const ledTubeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+    const createHexagonLED = (hx, hz, radius = 1.35) => {
+      const g = new THREE.Group();
+      g.position.set(hx, 0, hz);
+      for (let i = 0; i < 6; i++) {
+        const a1 = (i * Math.PI) / 3;
+        const a2 = ((i + 1) * Math.PI) / 3;
+        const x1 = Math.cos(a1) * radius;
+        const z1 = Math.sin(a1) * radius;
+        const x2 = Math.cos(a2) * radius;
+        const z2 = Math.sin(a2) * radius;
+        const len = Math.hypot(x2 - x1, z2 - z1);
+        const tube = new THREE.Mesh(new THREE.BoxGeometry(len, 0.045, 0.06), ledTubeMat);
+        tube.position.set((x1 + x2) / 2, 0, (z1 + z2) / 2);
+        tube.rotation.y = -Math.atan2(z2 - z1, x2 - x1);
+        g.add(tube);
+      }
+      return g;
+    };
+
+    // 7 Interconnected Honeycomb Hexagons overhead
+    hexGroup.add(createHexagonLED(0, 0, 1.4));
+    for (let i = 0; i < 6; i++) {
+      const ang = (i * Math.PI) / 3;
+      hexGroup.add(createHexagonLED(Math.cos(ang) * 2.45, Math.sin(ang) * 2.45, 1.4));
+    }
+    this.garageGroup.add(hexGroup);
+
+    // 5. --- PREMIUM AUTO SHOWROOM LIGHTING RIG ---
+    // Studio Ambient Light for rich, vibrant car body paint reflection
+    const garageAmbient = new THREE.AmbientLight(0xfff8ee, 1.25);
+    this.garageGroup.add(garageAmbient);
+
+    // Overhead Central Key Spotlight (High intensity, focused on car)
+    const studioSpot = new THREE.SpotLight(0xffffff, 4.8, 28, Math.PI / 3.4, 0.45, 1.0);
+    studioSpot.position.set(cx, 6.8, cz);
+    studioSpot.target.position.set(cx, 0.4, cz);
+    this.garageGroup.add(studioSpot);
+    this.garageGroup.add(studioSpot.target);
+
+    // Front Warm Stage Spotlight (Vividly illuminates front bumper, grille & headlights)
+    const frontSpot = new THREE.SpotLight(0xfff5ea, 4.2, 22, Math.PI / 3.2, 0.4, 1.0);
+    frontSpot.position.set(cx, 3.8, cz + 5.5);
+    frontSpot.target.position.set(cx, 0.4, cz);
+    this.garageGroup.add(frontSpot);
+    this.garageGroup.add(frontSpot.target);
+
+    // Dual Angled Front Floodlights
+    const frontFillL = new THREE.DirectionalLight(0xdbeafe, 1.15);
+    frontFillL.position.set(cx - 4.5, 4.2, cz + 4.5);
+    const frontFillR = new THREE.DirectionalLight(0xfef3c7, 1.15);
+    frontFillR.position.set(cx + 4.5, 4.2, cz + 4.5);
+    this.garageGroup.add(frontFillL, frontFillR);
+
+    // Cyan Rim Light (Left)
+    const rimCyan = new THREE.PointLight(0x00f3ff, 2.8, 24);
+    rimCyan.position.set(cx - 5.2, 3.0, cz - 3.8);
+    this.garageGroup.add(rimCyan);
+
+    // Pink/Magenta Rim Light (Right)
+    const rimPink = new THREE.PointLight(0xff0066, 2.6, 24);
+    rimPink.position.set(cx + 5.2, 3.0, cz - 3.8);
+    this.garageGroup.add(rimPink);
+
+    // Back Wall Neon Uplight
+    const backWash = new THREE.SpotLight(0x00d2ff, 3.5, 26, Math.PI / 2.6, 0.5);
+    backWash.position.set(cx, 1.0, cz - 10.0);
+    backWash.target.position.set(cx, 5.2, cz - 12.4);
+    this.garageGroup.add(backWash);
+    this.garageGroup.add(backWash.target);
+
+    this.garageGroup.visible = false;
+    this.scene.add(this.garageGroup);
+  }
+
+  enterGaragePreview(carId, skinFileName, color, addons = null) {
+    this.state = 'GARAGE';
+    if (!this.garageGroup) {
+      this.setupGarageEnvironment();
+    }
+    this.garageGroup.visible = true;
+
+    // Hide playerCar, track, and decorations so there's never a second car or track clutter in garage
+    if (this.playerCar && this.playerCar.model) {
+      this.playerCar.model.visible = false;
+    }
+    if (this.track && this.track.group) {
+      this.track.group.visible = false;
+    }
+    if (this.decorations && this.decorations.group) {
+      this.decorations.group.visible = false;
+    }
+
+    // Save previous sky / fog and switch to clean dark luxury showroom atmosphere
+    if (!this.prevSceneBackground) {
+      this.prevSceneBackground = this.scene.background;
+      this.prevSceneFog = this.scene.fog;
+    }
+    this.scene.background = new THREE.Color(0x0c0f1a);
+    this.scene.fog = new THREE.FogExp2(0x0c0f1a, 0.006);
+
+    if (this.garageCarMesh) {
+      this.scene.remove(this.garageCarMesh.root);
+      this.garageCarMesh = null;
+    }
+
+    const appliedAddons = addons || this.ui?.currentAddons;
+    this.garageCarMesh = this.carBuilder.createCar(carId, skinFileName, color, false, appliedAddons);
+    this.garageCarMesh.root.position.set(0.3, 0.25, 0);
     this.scene.add(this.garageCarMesh.root);
 
-    this.camera.position.set(0, 2.4, 6.5);
-    this.camera.lookAt(0, 0.8, 0);
+    this.updateGarageCamera(0.016);
   }
 
   updateGarageSkin(skinFileName) {
     if (this.state !== 'GARAGE') return;
     const car = this.ui.getSelectedCar();
-    this.enterGaragePreview(car.id, skinFileName, this.ui.currentColor);
+    this.enterGaragePreview(car.id, skinFileName, this.ui.currentColor, this.ui.currentAddons);
   }
 
   updateGarageColor(color) {
     if (this.state !== 'GARAGE') return;
     const car = this.ui.getSelectedCar();
-    this.enterGaragePreview(car.id, this.ui.getSelectedSkinFile(), color);
+    this.enterGaragePreview(car.id, this.ui.getSelectedSkinFile(), color, this.ui.currentAddons);
+  }
+
+  updateGarageAddons(addons) {
+    if (this.state !== 'GARAGE') return;
+    const car = this.ui.getSelectedCar();
+    this.enterGaragePreview(car.id, this.ui.getSelectedSkinFile(), this.ui.currentColor, addons);
   }
 
   exitGaragePreview() {
@@ -465,7 +1354,82 @@ export class Game {
       this.scene.remove(this.garageCarMesh.root);
       this.garageCarMesh = null;
     }
+    if (this.garageGroup) {
+      this.garageGroup.visible = false;
+    }
+
+    // Restore track, scenery, and scene background/fog
+    if (this.track && this.track.group) {
+      this.track.group.visible = true;
+    }
+    if (this.decorations && this.decorations.group) {
+      this.decorations.group.visible = true;
+    }
+    if (this.prevSceneBackground) {
+      this.scene.background = this.prevSceneBackground;
+      this.scene.fog = this.prevSceneFog;
+      this.prevSceneBackground = null;
+      this.prevSceneFog = null;
+    }
+
+    // Update PlayerCar with new car, skin, color, and addons for main menu backdrop
+    const playerConfig = this.ui.getPlayerConfig();
+    const carConfig = CARS.find(c => c.id === playerConfig.carId) || CARS[0];
+    this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color, playerConfig.addons);
+    this.positionCarAtStart(this.playerCar, 0);
+    if (this.playerCar && this.playerCar.model) {
+      this.playerCar.model.visible = true;
+    }
+
     this.state = 'MENU';
+  }
+
+  // --- 360° Orbit Inspection Camera ---
+  updateGarageCamera(delta) {
+    if (this.garageAutoSpin && !this.garageIsDragging) {
+      this.garageTargetAngle += delta * 0.32;
+    }
+
+    // Smooth damping for fluid, cinematic 360 orbit
+    this.garageAngle = THREE.MathUtils.damp(this.garageAngle, this.garageTargetAngle, 12, delta);
+    this.garagePitch = THREE.MathUtils.damp(this.garagePitch, this.garageTargetPitch, 12, delta);
+    this.garageDistance = THREE.MathUtils.damp(this.garageDistance, this.garageTargetDistance, 12, delta);
+
+    // Look target slightly offset to the right so car is framed outside left HUD
+    const cx = 0.3;
+    const cy = 0.72;
+    const cz = 0;
+
+    const horizontalDist = this.garageDistance * Math.cos(this.garagePitch);
+    const camY = cy + this.garageDistance * Math.sin(this.garagePitch);
+    const camX = cx + Math.sin(this.garageAngle) * horizontalDist;
+    const camZ = cz + Math.cos(this.garageAngle) * horizontalDist;
+
+    this.camera.position.set(camX, camY, camZ);
+    this.camera.lookAt(cx, cy, cz);
+
+    if (this.garageCarMesh && this.garageCarMesh.root) {
+      this.garageCarMesh.root.position.set(cx, 0.25, cz);
+    }
+  }
+
+  toggleGarageAutoSpin() {
+    this.garageAutoSpin = !this.garageAutoSpin;
+    return this.garageAutoSpin;
+  }
+
+  rotateGarageBy(deltaAngle) {
+    this.garageTargetAngle += deltaAngle;
+  }
+
+  zoomGarageBy(deltaZoom) {
+    this.garageTargetDistance = Math.max(2.8, Math.min(10.5, this.garageTargetDistance + deltaZoom));
+  }
+
+  setGarageCameraAngle(angle, pitch = null, dist = null) {
+    this.garageTargetAngle = angle;
+    if (pitch !== null) this.garageTargetPitch = pitch;
+    if (dist !== null) this.garageTargetDistance = dist;
   }
 
   // --- Main Loop ---
@@ -474,9 +1438,8 @@ export class Game {
 
     const delta = Math.min(this.clock.getDelta(), 0.08);
 
-    if (this.state === 'GARAGE' && this.garageCarMesh) {
-      this.garageAngle += delta * 0.6;
-      this.garageCarMesh.root.rotation.y = this.garageAngle;
+    if (this.state === 'GARAGE') {
+      this.updateGarageCamera(delta);
       this.renderer.render(this.scene, this.camera);
       return;
     }
@@ -492,8 +1455,19 @@ export class Game {
       return;
     }
 
+    if (this.state === 'GRID_INTRO') {
+      this.updateGridIntro(delta);
+      if (this.track) this.track.update(delta);
+      if (this.decorations) this.decorations.update(delta, this.camera);
+      if (this.particles) this.particles.update(delta, this.camera);
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
     if (this.state === 'RACING') {
       this.updateRace(delta);
+    } else if (this.state === 'VICTORY') {
+      this.updateVictoryScene(delta);
     }
 
     if (this.track) this.track.update(delta);
@@ -504,16 +1478,33 @@ export class Game {
   }
 
   updateRace(delta) {
-    // 1. Process Player Controls
-    if (this.isRacing) {
-      this.updatePlayerInputs();
-    } else {
-      this.playerCar.inputs.throttle = 0;
-      this.playerCar.inputs.steer = 0;
-      this.playerCar.inputs.boost = false;
-      this.playerCar.inputs.drift = false;
+    if (!this.isRacing) {
+      // บอทและผู้เล่นไม่ออกรถไปก่อน: หยุดนิ่งอยู่กับที่บนกริดสตาร์ทจนกว่าสัญญาณ GO จะเริ่ม
+      if (this.playerCar) {
+        this.playerCar.inputs.throttle = 0;
+        this.playerCar.inputs.steer = 0;
+        this.playerCar.inputs.boost = false;
+        this.playerCar.inputs.drift = false;
+        this.playerCar.speed = 0;
+        this.playerCar.updateVisuals(delta);
+      }
+
+      this.aiCars.forEach(ai => {
+        ai.inputs.throttle = 0;
+        ai.inputs.steer = 0;
+        ai.inputs.boost = false;
+        ai.inputs.drift = false;
+        ai.speed = 0;
+        ai.updateVisuals(delta);
+      });
+
+      this.audio.updateEngine(0, 0, false, false);
+      this.updateCamera(delta);
+      return;
     }
 
+    // 1. Process Player Controls
+    this.updatePlayerInputs();
     this.playerCar.update(delta, this.track);
 
     // Audio update for player engine
@@ -562,6 +1553,9 @@ export class Game {
         this.particles.emitTireSmoke(ai.position);
       }
     });
+
+    // 3. Resolve Car-to-Car Collisions (รถชนกันความเร็วตกฮวบ)
+    this.resolveCarCollisions(delta);
 
     // 3. Update Remote Multiplayer Cars (Interpolation)
     this.remotePlayers.forEach(remote => {
@@ -639,6 +1633,107 @@ export class Game {
     this.updateCamera(delta);
   }
 
+  resolveCarCollisions(delta) {
+    if (!this.isRacing) return;
+    const cars = [this.playerCar, ...this.aiCars];
+    const collisionRadius = 2.1;
+    const minDist = collisionRadius * 2;
+
+    for (let i = 0; i < cars.length; i++) {
+      for (let j = i + 1; j < cars.length; j++) {
+        const carA = cars[i];
+        const carB = cars[j];
+        if (!carA || !carB) continue;
+
+        const diff = new THREE.Vector3().subVectors(carA.position, carB.position);
+        diff.y = 0;
+        const dist = diff.length();
+
+        if (dist > 0.001 && dist < minDist) {
+          const overlap = minDist - dist;
+          const normal = diff.normalize();
+
+          // เด้งแยกออกจากกันเบาๆ นุ่มนวล ไม่สะบัดหรือหมุนติ้ว
+          carA.position.addScaledVector(normal, overlap * 0.5);
+          carB.position.addScaledVector(normal, -overlap * 0.5);
+
+          const now = performance.now();
+          const lastHitA = carA.lastCarHitTime || 0;
+          const lastHitB = carB.lastCarHitTime || 0;
+
+          if (now - lastHitA > 400 && now - lastHitB > 400) {
+            carA.lastCarHitTime = now;
+            carB.lastCarHitTime = now;
+
+            // ตอนที่ชน ความเร็วจะลดลงอย่างมาก (Severe collision speed penalty)
+            carA.speed = Math.max(0, carA.speed * 0.52);
+            carB.speed = Math.max(0, carB.speed * 0.52);
+
+            // ตัดบูสต์เมื่อชน
+            carA.boostTimer = 0;
+            carB.boostTimer = 0;
+
+            if (this.audio) this.audio.playCollision();
+            if (this.particles) {
+              const midPoint = new THREE.Vector3().addVectors(carA.position, carB.position).multiplyScalar(0.5);
+              this.particles.emitDriftSparks(midPoint, 2);
+            }
+
+            if ((carA.isPlayer || carB.isPlayer) && this.hud) {
+              this.hud.showReaction('💥 ชนกับคู่แข่ง! ความเร็วตกฮวบ', 1200);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  updateVictoryScene(delta) {
+    if (!this.playerCar) return;
+
+    // Decelerate cars to a clean halt
+    if (this.playerCar.speed > 0) {
+      this.playerCar.speed = Math.max(0, this.playerCar.speed - 22 * delta);
+      this.playerCar.updatePhysics(delta, this.track);
+    }
+    this.playerCar.updateVisuals(delta);
+
+    this.aiCars.forEach(ai => {
+      if (ai.speed > 0) {
+        ai.speed = Math.max(0, ai.speed - 22 * delta);
+        ai.updatePhysics(delta, this.track);
+      }
+      ai.updateVisuals(delta);
+    });
+
+    // Smooth cinematic orbit camera around the winning car / finish area
+    this.victoryCameraAngle = (this.victoryCameraAngle || 0) + delta * 0.32;
+    const center = this.playerCar.position;
+    const camDist = 8.5;
+    const camHeight = 3.0;
+
+    this.camera.position.set(
+      center.x + Math.sin(this.victoryCameraAngle) * camDist,
+      center.y + camHeight,
+      center.z + Math.cos(this.victoryCameraAngle) * camDist
+    );
+    this.camera.lookAt(center.x, center.y + 0.9, center.z);
+
+    // Periodic 3D fireworks celebration
+    this.victoryFireworkTimer = (this.victoryFireworkTimer || 0) + delta;
+    if (this.victoryFireworkTimer > 0.4) {
+      this.victoryFireworkTimer = 0;
+      if (this.particles) {
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * 16,
+          4.0 + Math.random() * 4.5,
+          (Math.random() - 0.5) * 16
+        );
+        this.particles.emitCelebrationFirework(center.clone().add(offset));
+      }
+    }
+  }
+
   updateCamera(delta) {
     if (!this.playerCar) return;
 
@@ -656,8 +1751,9 @@ export class Game {
       lookTargetOffset = new THREE.Vector3(0, 1.1, 12);
     }
 
-    const speedRatio = Math.min(1.5, Math.abs(this.playerCar.speed) / 35);
-    const targetFov = (this.playerCar.boostTimer > 0) ? 82 : 65 + (speedRatio * 10);
+    const speedRatio = Math.min(1.0, Math.abs(this.playerCar.speed) / 55);
+    const boostBoost = (this.playerCar.boostTimer > 0) ? 14 : 0;
+    const targetFov = 65 + (speedRatio * 16) + boostBoost;
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 6);
     this.camera.updateProjectionMatrix();
 
@@ -674,6 +1770,12 @@ export class Game {
   initInputs() {
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
+
+      // Skip Starting Grid Intro on Space, Enter, or Escape
+      if (this.state === 'GRID_INTRO' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'Escape')) {
+        this.finishGridIntro();
+        return;
+      }
 
       // Switch camera view
       if (e.code === 'KeyC') {
@@ -717,6 +1819,52 @@ export class Game {
     bindTouch('btn-touch-drift', 'Space');
     bindTouch('btn-touch-boost', 'ShiftLeft');
     bindTouch('btn-touch-item', 'KeyQ');
+
+    // --- Garage 360° Interactive Orbit Drag & Zoom Handlers ---
+    window.addEventListener('pointerdown', (e) => {
+      if (this.state !== 'GARAGE') return;
+      if (e.target.closest('.garage-console') || 
+          e.target.closest('.garage-topbar') || 
+          e.target.closest('.garage-turntable-controls') || 
+          e.target.closest('button') || 
+          e.target.closest('input') ||
+          e.target.closest('.color-swatch') ||
+          e.target.closest('.addon-pill') ||
+          e.target.closest('.skin-card')) {
+        return;
+      }
+      this.garageIsDragging = true;
+      this.garageDragPrevX = e.clientX;
+      this.garageDragPrevY = e.clientY;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (this.state !== 'GARAGE' || !this.garageIsDragging) return;
+      const dx = e.clientX - this.garageDragPrevX;
+      const dy = e.clientY - this.garageDragPrevY;
+      this.garageDragPrevX = e.clientX;
+      this.garageDragPrevY = e.clientY;
+
+      this.garageTargetAngle -= dx * 0.0075;
+      this.garageTargetPitch = Math.max(-0.06, Math.min(1.22, this.garageTargetPitch + dy * 0.0065));
+    });
+
+    window.addEventListener('pointerup', () => {
+      this.garageIsDragging = false;
+    });
+
+    window.addEventListener('pointercancel', () => {
+      this.garageIsDragging = false;
+    });
+
+    window.addEventListener('wheel', (e) => {
+      if (this.state !== 'GARAGE') return;
+      if (e.target.closest('.garage-tab-scroll') || e.target.closest('.skins-scroll-grid')) {
+        return; // Allow native list scrolling
+      }
+      e.preventDefault();
+      this.zoomGarageBy(e.deltaY * 0.005);
+    }, { passive: false });
   }
 
   updatePlayerInputs() {

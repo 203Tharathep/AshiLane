@@ -55,6 +55,40 @@ export class ParticleSystem {
     });
   }
 
+  emitCelebrationFirework(pos) {
+    const fireworkColors = [0xffd700, 0x00f0ff, 0xff0055, 0x00ff88, 0xffffff, 0xdd00ff];
+    const color = fireworkColors[Math.floor(Math.random() * fireworkColors.length)];
+
+    for (let i = 0; i < 20; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending
+      });
+      const mesh = new THREE.Mesh(this.sparkGeo, mat);
+      mesh.scale.setScalar(1.6 + Math.random() * 1.6);
+      mesh.position.copy(pos);
+      this.scene.add(mesh);
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 3.5 + Math.random() * 6.5;
+      const vy = 2.5 + Math.random() * 6.0;
+
+      this.particles.push({
+        mesh,
+        velocity: new THREE.Vector3(
+          Math.cos(angle) * speed,
+          vy,
+          Math.sin(angle) * speed
+        ),
+        scaleGrowth: -0.6,
+        life: 0.8 + Math.random() * 0.4,
+        maxLife: 1.2
+      });
+    }
+  }
+
   emitDriftSparks(pos, level = 1) {
     const sparkColors = [0x00f0ff, 0x00d2ff, 0xffaa00, 0xdd00ff];
     const color = sparkColors[level] || 0x00f0ff;

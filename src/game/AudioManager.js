@@ -89,7 +89,7 @@ export class AudioManager {
     }
 
     const baseFreq = 55;
-    const speedPitch = (speedKmh / 200) * 160;
+    const speedPitch = (speedKmh / 280) * 190;
     const throttlePitch = (throttle > 0 ? 30 : 0);
     const boostPitch = (isBoost ? 60 : 0);
 
@@ -98,7 +98,7 @@ export class AudioManager {
     this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
     this.engineSub.frequency.setTargetAtTime(freq * 0.5, this.ctx.currentTime, 0.05);
 
-    const targetVol = Math.min(0.25, 0.06 + (speedKmh / 200) * 0.15 + (throttle > 0 ? 0.05 : 0));
+    const targetVol = Math.min(0.26, 0.06 + (speedKmh / 280) * 0.16 + (throttle > 0 ? 0.05 : 0));
     this.engineGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.08);
 
     if (isDrifting && speedKmh > 20) {
@@ -106,6 +106,34 @@ export class AudioManager {
     } else {
       this.screechGain.gain.setTargetAtTime(0.0, this.ctx.currentTime, 0.05);
     }
+  }
+
+  playGridIntroSwoosh() {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.7);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, now);
+    filter.frequency.exponentialRampToValueAtTime(3200, now + 0.7);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.20, now + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 1.1);
   }
 
   playCountdown(pitch = 440, duration = 0.15) {
@@ -212,25 +240,122 @@ export class AudioManager {
     osc.stop(this.ctx.currentTime + 0.25);
   }
 
+  playGridIntroSwoosh() {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    try {
+      // Sweeping whoosh noise filter
+      const bufferSize = Math.floor(this.ctx.sampleRate * 1.8);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * 0.7;
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 3.5;
+      filter.frequency.setValueAtTime(260, now);
+      filter.frequency.exponentialRampToValueAtTime(3400, now + 1.1);
+      filter.frequency.exponentialRampToValueAtTime(320, now + 1.8);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.3, now + 0.7);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+      noise.start(now);
+      noise.stop(now + 1.8);
+
+      // Low frequency sub-rumble riser
+      const sub = this.ctx.createOscillator();
+      const subGain = this.ctx.createGain();
+      sub.type = 'sawtooth';
+      sub.frequency.setValueAtTime(55, now);
+      sub.frequency.exponentialRampToValueAtTime(140, now + 1.4);
+      subGain.gain.setValueAtTime(0.18, now);
+      subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+      sub.connect(subGain);
+      subGain.connect(this.ctx.destination);
+      sub.start(now);
+      sub.stop(now + 1.8);
+    } catch (e) {}
+  }
+
   playVictoryChime() {
     if (!this.ctx || this.isMuted) return;
-    const notes = [523.25, 659.25, 783.99, 1046.50];
-    notes.forEach((freq, idx) => {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      const startTime = this.ctx.currentTime + idx * 0.12;
+    const now = this.ctx.currentTime;
 
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, startTime);
+    // 1. Triumphant Fanfare Arpeggio Chords
+    const chords = [
+      { time: 0.00, notes: [523.25, 659.25] },          // C5, E5
+      { time: 0.16, notes: [587.33, 698.46] },          // D5, F5
+      { time: 0.32, notes: [659.25, 783.99] },          // E5, G5
+      { time: 0.48, notes: [783.99, 987.77] },          // G5, B5
+      { time: 0.68, notes: [1046.50, 1318.51, 1567.98] } // Grand C6 Chord!
+    ];
 
-      gain.gain.setValueAtTime(0.3, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+    chords.forEach(c => {
+      c.notes.forEach(freq => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const startTime = now + c.time;
+        const dur = (c.time >= 0.68) ? 1.8 : 0.35;
 
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(startTime);
-      osc.stop(startTime + 0.4);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        gain.gain.setValueAtTime(0.001, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.22, startTime + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(2600, startTime);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(startTime);
+        osc.stop(startTime + dur);
+      });
     });
+
+    // 2. Crowd Cheer Noise Synth
+    try {
+      const bufferSize = this.ctx.sampleRate * 2.2;
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.7));
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const bandpass = this.ctx.createBiquadFilter();
+      bandpass.type = 'bandpass';
+      bandpass.frequency.setValueAtTime(950, now + 0.6);
+      bandpass.Q.setValueAtTime(1.4, now + 0.6);
+
+      const cheerGain = this.ctx.createGain();
+      cheerGain.gain.setValueAtTime(0.001, now + 0.6);
+      cheerGain.gain.exponentialRampToValueAtTime(0.25, now + 0.85);
+      cheerGain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+
+      noise.connect(bandpass);
+      bandpass.connect(cheerGain);
+      cheerGain.connect(this.ctx.destination);
+
+      noise.start(now + 0.6);
+    } catch (e) {}
   }
 
   toggleBgm() {

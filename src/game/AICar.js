@@ -22,13 +22,25 @@ export class AICar extends Car {
   updateAI(delta, track, playerCar, allCars = []) {
     if (!track) return;
 
+    // บอทไม่ออกรถไปก่อน: ถ้ายังอยู่ในช่วงนับถอยหลัง ให้หยุดนิ่ง 100% จนกว่าจะ GO
+    if (this.game && !this.game.isRacing) {
+      this.speed = 0;
+      this.inputs.throttle = 0;
+      this.inputs.steer = 0;
+      this.inputs.boost = false;
+      this.inputs.drift = false;
+      this.updateVisuals(delta);
+      return;
+    }
+
     // Fast track lookup
     const closest = track.getClosest(this.position, this.sampleIndexHint);
     this.sampleIndexHint = closest.index;
     this.currentT = closest.t;
 
-    // Lookahead target point along spline with lane offset
-    const targetT = (closest.t + this.lookAheadDistance) % 1;
+    // Dynamic Lookahead scaling with speed
+    const lookAhead = 0.026 + Math.min(0.042, (Math.abs(this.speed) / 55) * 0.035);
+    const targetT = (closest.t + lookAhead) % 1;
     const targetIdx = track.indexFromT(targetT);
     const centerTarget = track.samplePos[targetIdx];
     const normal = track.sampleNorm[targetIdx];
@@ -48,9 +60,9 @@ export class AICar extends Car {
     const angleDiff = Math.atan2(cross.y, dot);
 
     // Steer towards target point
-    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * 2.6, -1, 1);
+    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * 2.5, -1, 1);
 
-    // Speed / Throttle control
+    // Speed / Throttle control (AI เลี้ยงความเร็วตามความโค้งของแทร็ก)
     const trackCurv = Math.abs(track.sampleCurv[targetIdx] || 0);
     const turnSeverity = Math.max(Math.abs(angleDiff), trackCurv * 35);
 
@@ -58,14 +70,14 @@ export class AICar extends Car {
     const effectiveSkill = this.skill * this.aiDifficultyMul * baseTrackMul;
 
     if (turnSeverity > 0.45) {
-      // Sharp corner
-      this.inputs.throttle = 0.65 * effectiveSkill;
-      if (this.speed > 14 && Math.random() < 0.12) {
+      // Sharp corner: AI lifts off throttle to feather speed into the apex
+      this.inputs.throttle = 0.25 * effectiveSkill;
+      if (this.speed > 22 && Math.random() < 0.2) {
         this.inputs.drift = true;
       }
     } else if (turnSeverity > 0.22) {
-      // Medium corner
-      this.inputs.throttle = 0.85 * effectiveSkill;
+      // Medium corner: partial throttle
+      this.inputs.throttle = 0.65 * effectiveSkill;
       this.inputs.drift = false;
     } else {
       // Straightaway: full gas

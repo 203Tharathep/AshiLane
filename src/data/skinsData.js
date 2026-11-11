@@ -6,7 +6,8 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg',
     rarity: 'legendary',
     tag: 'ICONIC',
-    desc: 'สกินระดับตำนาน เดรสสีเขียวมรกต ลายบนฝากระโปรงและหลังคา เพิ่มความพริ้วไหว 100%'
+    color: '#0d5c3a',
+    desc: 'สกินระดับตำนาน เดรสสีเขียวมรกต ลายรอบตัวถัง ฝากระโปรง และหลังคา เพิ่มความพริ้วไหว 100%'
   },
   {
     id: 'red_bikini',
@@ -15,7 +16,8 @@ export const SKINS = [
     file: 'qwen_edit_20261004_234512.png',
     rarity: 'legendary',
     tag: 'HOT SPEED',
-    desc: 'สกินท้าลมร้อน สีแดงจัดจ้านสะดุดตาทุกโค้ง เพิ่มความดุดันและร้อนแรง'
+    color: '#e60026',
+    desc: 'สกินท้าลมร้อน สีแดงจัดจ้านสะดุดตาทุกโค้ง เพิ่มความดุดันและร้อนแรงรอบคัน'
   },
   {
     id: 'shrek_ashi',
@@ -24,6 +26,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_9bccp39bccp39bcc.jpeg',
     rarity: 'epic',
     tag: 'OGRE POWER',
+    color: '#4d7c0f',
     desc: 'พลังแห่งหนองน้ำ ตัวเขียวหูแตร ปาดโค้งแบบไร้ความปรานี'
   },
   {
@@ -33,6 +36,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_w62h0zw62h0zw62h.jpg',
     rarity: 'epic',
     tag: 'EXPLOSIVE',
+    color: '#dc2626',
     desc: 'หน้านิ่งแต่ระเบิดพลังบูสต์ ชนใครมีกระเด็น'
   },
   {
@@ -42,6 +46,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_r2mua9r2mua9r2mu.jpg',
     rarity: 'epic',
     tag: 'HYPER FAST',
+    color: '#eab308',
     desc: 'จงอยปากพุ่งทะยาน ความเร็วปลายไร้ขีดจำกัด'
   },
   {
@@ -51,6 +56,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_ovar5lovar5lovar.jpeg',
     rarity: 'epic',
     tag: 'DARK MODE',
+    color: '#6366f1',
     desc: 'ตาแดงประกายเลือด ผมขาวสุดเท่ ซิ่งทะลุยามค่ำคืน'
   },
   {
@@ -60,6 +66,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_t2e45ct2e45ct2e4.jpeg',
     rarity: 'rare',
     tag: 'BIG BOSS',
+    color: '#0284c7',
     desc: 'เสื้อเชิ้ตเนคไท ยกนิ้วโป้งให้กำลังใจคู่แข่งที่ตามหลัง'
   },
   {
@@ -69,6 +76,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_kwy6itkwy6itkwy6.jpeg',
     rarity: 'rare',
     tag: 'WIGGLE',
+    color: '#f59e0b',
     desc: 'คู่หูหนอนจอมกวน ดริฟต์ดึ๋งๆ สไลด์เข้าเส้นชัย'
   },
   {
@@ -78,6 +86,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_nkpk4ynkpk4ynkpk.jpeg',
     rarity: 'rare',
     tag: 'FIGHTER',
+    color: '#b91c1c',
     desc: 'เสื้อขาดไม่ขาดใจ ดริฟต์สู้จนหยดสุดท้าย'
   },
   {
@@ -87,6 +96,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_8ffdat8ffdat8ffd.jpg',
     rarity: 'rare',
     tag: 'SECRET CHEF',
+    color: '#ea580c',
     desc: 'ส่งด่วนความเร็วสูง พิซซ่ายังร้อนๆ ถึงเส้นชัยก่อนใคร'
   },
   {
@@ -96,6 +106,7 @@ export const SKINS = [
     file: '1.jpeg',
     rarity: 'common',
     tag: 'SLEEPY',
+    color: '#6366f1',
     desc: 'หลับตาก็ยังชนะ สกินสมาธิขั้นสูงสุด'
   },
   {
@@ -105,6 +116,7 @@ export const SKINS = [
     file: 'Gemini_Generated_Image_njs9nynjs9nynjs9.jpg',
     rarity: 'common',
     tag: 'CHILL',
+    color: '#0284c7',
     desc: 'นอนมองเพดานรอเพื่อนเข้าเส้นชัย'
   },
   {
@@ -114,6 +126,7 @@ export const SKINS = [
     file: '2.jpeg',
     rarity: 'common',
     tag: 'SWEET',
+    color: '#db2777',
     desc: 'รอยยิ้มกระชากใจ แจกความสดใสบนสนามแข่ง'
   },
   {
@@ -123,6 +136,7 @@ export const SKINS = [
     file: '3.jpeg',
     rarity: 'common',
     tag: 'FRESH',
+    color: '#059669',
     desc: 'ความมั่นใจเกินร้อย เข้าโค้งไม่แตะเบรก'
   },
   {
@@ -132,6 +146,7 @@ export const SKINS = [
     file: '4.jpeg',
     rarity: 'common',
     tag: 'COOL',
+    color: '#7c3aed',
     desc: 'มุมหล่อเหลาบาดตาคู่แข่ง'
   },
   {
@@ -141,6 +156,7 @@ export const SKINS = [
     file: '5.jpeg',
     rarity: 'common',
     tag: 'RACING',
+    color: '#dc2626',
     desc: 'จ้องมองเส้นชัยข้างหน้า'
   },
   {
@@ -150,6 +166,7 @@ export const SKINS = [
     file: '6.jpeg',
     rarity: 'common',
     tag: 'BANANA',
+    color: '#eab308',
     desc: 'กวนโอ๊ยขั้นสุด ซิ่งแซงทุกคัน'
   },
   {
@@ -159,6 +176,7 @@ export const SKINS = [
     file: '7.jpeg',
     rarity: 'common',
     tag: 'STREET',
+    color: '#2563eb',
     desc: 'สายสตรีทตัวจริงเสียงจริง'
   },
   {
@@ -168,6 +186,7 @@ export const SKINS = [
     file: '1000010497.jpg',
     rarity: 'rare',
     tag: 'SWAG',
+    color: '#0891b2',
     desc: 'แว่นตากันลมและแสงไฟสปอร์ตไลท์'
   },
   {
@@ -177,6 +196,7 @@ export const SKINS = [
     file: '9594C133-5E25-46D5-AFBF-57F4A9578910.jpg',
     rarity: 'rare',
     tag: 'STARE',
+    color: '#0284c7',
     desc: 'สายตาพิฆาตคู่แข่ง เสียวสันหลังวาบ'
   },
   {
@@ -186,6 +206,7 @@ export const SKINS = [
     file: 'A600349B-B25C-4CC0-98E5-E87A2CA8E409.jpg',
     rarity: 'rare',
     tag: 'KAWAII',
+    color: '#f43f5e',
     desc: 'รูปเซลฟี่น่ารักมุ้งมิ้งบนฝากระโปรง'
   },
   {
@@ -195,6 +216,7 @@ export const SKINS = [
     file: 'image.jpg',
     rarity: 'rare',
     tag: 'MEME',
+    color: '#d97706',
     desc: 'มีมในตำนานที่ทุกคนต้องกราบ'
   }
 ];

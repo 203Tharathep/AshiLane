@@ -21,6 +21,7 @@ export class HUD {
     this.countdownText = document.getElementById('countdown-text');
 
     this.notificationBox = document.getElementById('hud-notifications');
+    this.momentumBadge = document.getElementById('hud-momentum-badge');
 
     this.reactionTimeout = null;
   }
@@ -65,13 +66,27 @@ export class HUD {
     let gear = '1';
     if (playerCar.speed < 0) gear = 'R';
     else if (kmh < 1) gear = 'N';
-    else if (kmh < 40) gear = '1';
-    else if (kmh < 80) gear = '2';
-    else if (kmh < 120) gear = '3';
-    else if (kmh < 160) gear = '4';
-    else if (kmh < 200) gear = '5';
-    else gear = '6';
+    else if (kmh < 48) gear = '1';
+    else if (kmh < 95) gear = '2';
+    else if (kmh < 140) gear = '3';
+    else if (kmh < 185) gear = '4';
+    else if (kmh < 230) gear = '5';
+    else if (kmh < 270) gear = '6';
+    else gear = '7';
     if (this.gearText) this.gearText.textContent = gear;
+
+    // Momentum / Speed Feathering Badge
+    if (this.momentumBadge) {
+      if (playerCar.apexBonusTimer > 0) {
+        this.momentumBadge.textContent = '⚡ APEX EXIT! สปีดพุ่ง!';
+        this.momentumBadge.className = 'momentum-badge apex-active';
+      } else if (playerCar.isFeathering) {
+        this.momentumBadge.textContent = '🎯 เลี้ยงความเร็ว (CARVING)';
+        this.momentumBadge.className = 'momentum-badge feathering-active';
+      } else {
+        this.momentumBadge.className = 'momentum-badge hidden';
+      }
+    }
 
     // Nitro Bar
     if (this.nitroBar) {
