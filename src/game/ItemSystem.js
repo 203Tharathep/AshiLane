@@ -17,12 +17,48 @@ export class ItemSystem {
     this.initItemBoxes();
   }
 
-  initItemBoxes() {
-    // Spawn item box clusters along the track at t = 0.18, 0.42, 0.65, 0.82
-    const clusters = [0.18, 0.42, 0.65, 0.82];
-    const boxGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+  resetForTrack(newTrack) {
+    // Clear old boxes
+    this.itemBoxes.forEach(b => {
+      if (b.mesh) {
+        this.scene.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        if (b.mesh.material) b.mesh.material.dispose();
+      }
+    });
+    this.itemBoxes = [];
 
-    // Glowing question mark canvas texture
+    // Clear bananas
+    this.activeBananas.forEach(b => {
+      if (b.mesh) {
+        this.scene.remove(b.mesh);
+        b.mesh.geometry.dispose();
+        if (b.mesh.material) b.mesh.material.dispose();
+      }
+    });
+    this.activeBananas = [];
+
+    // Clear missiles
+    this.activeMissiles.forEach(m => {
+      if (m.mesh) {
+        this.scene.remove(m.mesh);
+        m.mesh.geometry.dispose();
+        if (m.mesh.material) m.mesh.material.dispose();
+      }
+    });
+    this.activeMissiles = [];
+
+    this.track = newTrack;
+    this.initItemBoxes();
+  }
+
+  initItemBoxes() {
+    if (!this.track) return;
+
+    const clusters = this.track.def?.itemClusters || [0.2, 0.45, 0.75];
+    const boxGeo = new THREE.BoxGeometry(1.3, 1.3, 1.3);
+
+    // Question mark texture
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
@@ -38,22 +74,25 @@ export class ItemSystem {
     ctx.textBaseline = 'middle';
     ctx.fillText('?', 64, 64);
     const boxTex = new THREE.CanvasTexture(canvas);
+    boxTex.colorSpace = THREE.SRGBColorSpace;
 
     const boxMat = new THREE.MeshBasicMaterial({
       map: boxTex,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.88
     });
 
-    clusters.forEach(t => {
-      const pt = this.track.spline.getPointAt(t);
-      const tangent = this.track.spline.getTangentAt(t).normalize();
-      const normal = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+    const halfRoad = (this.track.roadWidth || 16) / 2;
+    const offsets = [-halfRoad * 0.55, 0, halfRoad * 0.55];
 
-      // 3 boxes side-by-side across the track
-      [-5, 0, 5].forEach(offset => {
-        const pos = pt.clone().addScaledVector(normal, offset);
-        pos.y = pt.y + 1.2;
+    clusters.forEach(t => {
+      const idx = this.track.indexFromT(t);
+      const centerPt = this.track.samplePos[idx];
+      const normal = this.track.sampleNorm[idx];
+
+      offsets.forEach(offset => {
+        const pos = centerPt.clone().addScaledVector(normal, offset);
+        pos.y = 1.1;
 
         const mesh = new THREE.Mesh(boxGeo, boxMat);
         mesh.position.copy(pos);
@@ -82,15 +121,17 @@ export class ItemSystem {
           this.pickupItem(playerCar, box);
         }
 
-        // Check collision with other cars (AI or friends)
-        otherCars.forEach(car => {
-          if (!car.currentItem && car.position.distanceTo(box.pos) < 2.2) {
+        // Check collision with other cars (AI or remote)
+        for (let i = 0; i < otherCars.length; i++) {
+          const car = otherCars[i];
+          if (car && !car.currentItem && car.position.distanceTo(box.pos) < 2.2) {
             box.active = false;
             box.respawnTimer = 6.0;
             box.mesh.visible = false;
             car.currentItem = this.itemTypes[Math.floor(Math.random() * this.itemTypes.length)];
+            break;
           }
-        });
+        }
       } else {
         box.respawnTimer -= delta;
         if (box.respawnTimer <= 0) {
@@ -105,21 +146,24 @@ export class ItemSystem {
       const b = this.activeBananas[i];
       b.mesh.rotation.y += delta * 1.5;
 
-      // Check collision with player
+      // Hit player
       if (playerCar && !playerCar.isInvincible && playerCar.position.distanceTo(b.pos) < 2.0) {
         this.triggerSpinOut(playerCar);
         this.removeBanana(i);
         continue;
       }
 
-      // Check collision with other cars
+      // Hit other cars
+      let hit = false;
       for (const car of otherCars) {
-        if (!car.isInvincible && car.position.distanceTo(b.pos) < 2.0) {
+        if (car && !car.isInvincible && car.position.distanceTo(b.pos) < 2.0) {
           this.triggerSpinOut(car);
           this.removeBanana(i);
+          hit = true;
           break;
         }
       }
+      if (hit) continue;
     }
 
     // 3. Update Missiles
@@ -132,23 +176,24 @@ export class ItemSystem {
         continue;
       }
 
-      // Move forward
+      // Guided flight along missile velocity
       m.pos.addScaledVector(m.velocity, delta);
       m.mesh.position.copy(m.pos);
 
-      // Check hit on player
-      if (m.owner !== playerCar && playerCar && !playerCar.isInvincible && playerCar.position.distanceTo(m.pos) < 2.5) {
+      // Hit player
+      if (m.owner !== playerCar && playerCar && !playerCar.isInvincible && playerCar.position.distanceTo(m.pos) < 2.6) {
         this.triggerSpinOut(playerCar);
-        this.particles.emitExhaustFlame([m.mesh], true);
+        if (this.particles) this.particles.emitExhaustFlame([m.mesh], true);
         this.removeMissile(i);
         continue;
       }
 
-      // Check hit on other cars
+      // Hit other cars
       let hit = false;
       for (const car of otherCars) {
-        if (m.owner !== car && !car.isInvincible && car.position.distanceTo(m.pos) < 2.5) {
+        if (car && m.owner !== car && !car.isInvincible && car.position.distanceTo(m.pos) < 2.6) {
           this.triggerSpinOut(car);
+          if (this.particles) this.particles.emitExhaustFlame([m.mesh], true);
           hit = true;
           break;
         }
@@ -164,44 +209,65 @@ export class ItemSystem {
     box.respawnTimer = 6.0;
     box.mesh.visible = false;
 
-    // Pick random item
     const picked = this.itemTypes[Math.floor(Math.random() * this.itemTypes.length)];
     car.currentItem = picked;
 
-    this.audio.playCountdown(600, 0.1);
-    this.hud.setItem(picked);
+    if (this.audio) this.audio.playItemPickup();
+    if (this.hud && car.isPlayer) {
+      this.hud.setItem(picked);
+      const names = {
+        boost: '⚡ ซูเปอร์ไนโตร',
+        banana: '🍌 เปลือกกล้วยดักหลัง',
+        missile: '🚀 มิสไซล์นำวิถี',
+        shield: '🛡️ โล่ป้องกันบาเรีย'
+      };
+      this.hud.showNotification(`ได้รับ: ${names[picked] || picked}!`);
+    }
   }
 
   useItem(car) {
     if (!car || !car.currentItem) return;
     const item = car.currentItem;
     car.currentItem = null;
-    this.hud.setItem(null);
+
+    if (car.isPlayer && this.hud) {
+      this.hud.setItem(null);
+    }
 
     if (item === 'boost') {
-      car.boostTimer = 3.5;
+      car.boostTimer = 3.6;
       car.isInvincible = true;
-      setTimeout(() => { car.isInvincible = false; }, 3500);
-      this.audio.playBoostSound();
-      this.hud.showReaction('⚡ ซูเปอร์ไนโตรติดสปีด!', 1500);
+      setTimeout(() => { car.isInvincible = false; }, 3600);
+      if (this.audio) this.audio.playBoostSound();
+      if (car.isPlayer && this.hud) {
+        this.hud.showReaction('⚡ ซูเปอร์ไนโตรติดสปีด!', 1500);
+      }
     } else if (item === 'banana') {
       this.dropBanana(car);
-      this.hud.showReaction('🍌 วางเปลือกกล้วยดักหลัง!', 1500);
+      if (car.isPlayer && this.hud) {
+        this.hud.showReaction('🍌 วางกล้วยดักหลัง!', 1500);
+      }
     } else if (item === 'missile') {
       this.fireMissile(car);
-      this.hud.showReaction('🚀 ยิงจรวดอาชิมิสไซล์!', 1500);
+      if (this.audio) this.audio.playMissileShoot();
+      if (car.isPlayer && this.hud) {
+        this.hud.showReaction('🚀 ยิงจรวดมิสไซล์!', 1500);
+      }
     } else if (item === 'shield') {
       car.isInvincible = true;
       setTimeout(() => { car.isInvincible = false; }, 5000);
-      this.hud.showReaction('🛡️ โล่ป้องกัน 5 วินาที!', 1500);
+      if (car.isPlayer && this.hud) {
+        this.hud.showReaction('🛡️ โล่ป้องกัน 5 วินาที!', 1500);
+      }
     }
   }
 
   dropBanana(car) {
-    const behind = new THREE.Vector3(0, 0.2, -2.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotationY);
+    const behind = new THREE.Vector3(0, 0.2, -2.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotationY);
     const pos = car.position.clone().add(behind);
+    pos.y = 0.25;
 
-    const geo = new THREE.ConeGeometry(0.35, 0.7, 8);
+    const geo = new THREE.ConeGeometry(0.35, 0.65, 8);
     geo.rotateZ(Math.PI / 4);
     const mat = new THREE.MeshStandardMaterial({ color: 0xffdd00, roughness: 0.3 });
     const mesh = new THREE.Mesh(geo, mat);
@@ -223,8 +289,8 @@ export class ItemSystem {
 
   fireMissile(car) {
     const forward = new THREE.Vector3(Math.sin(car.rotationY), 0, Math.cos(car.rotationY)).normalize();
-    const pos = car.position.clone().addScaledVector(forward, 2.5);
-    pos.y += 0.5;
+    const pos = car.position.clone().addScaledVector(forward, 2.8);
+    pos.y += 0.45;
 
     const geo = new THREE.CylinderGeometry(0.18, 0.18, 1.0, 12);
     geo.rotateX(Math.PI / 2);
@@ -237,9 +303,9 @@ export class ItemSystem {
     this.activeMissiles.push({
       mesh,
       pos,
-      velocity: forward.multiplyScalar(65),
+      velocity: forward.clone().multiplyScalar(68),
       owner: car,
-      life: 3.5
+      life: 4.0
     });
   }
 
@@ -254,24 +320,13 @@ export class ItemSystem {
   }
 
   triggerSpinOut(car) {
-    if (car.isSpinning) return;
-    car.isSpinning = true;
-    car.speed *= 0.25;
+    if (car.spinTimer > 0) return;
+    car.spinTimer = 1.25;
+    car.speed *= 0.3;
 
-    let elapsed = 0;
-    const startRot = car.rotationY;
-    const spinInterval = setInterval(() => {
-      elapsed += 0.05;
-      car.rotationY += 0.7;
-      if (elapsed >= 1.0) {
-        clearInterval(spinInterval);
-        car.isSpinning = false;
-      }
-    }, 50);
-
-    if (car.isPlayer) {
-      this.hud.showReaction('😵 แว้นหลุดโค้ง โดนไอเทม!', 1500);
+    if (this.audio) this.audio.playSlip();
+    if (car.isPlayer && this.hud) {
+      this.hud.showReaction('😵 รถหมุนติ้ว โดนไอเทม!', 1500);
     }
   }
 }
-

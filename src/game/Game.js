@@ -13,12 +13,18 @@ import { UIManager } from '../ui/UIManager.js';
 import { MultiplayerManager } from '../network/MultiplayerManager.js';
 import { CARS } from '../data/carsData.js';
 import { SKINS } from '../data/skinsData.js';
+import { TRACKS, DIFFICULTIES, getTrackDef } from '../data/tracksData.js';
 
 export class Game {
   constructor() {
     this.container = document.getElementById('canvas-container');
-    this.state = 'MENU'; // 'MENU', 'GARAGE', 'LOBBY', 'RACING', 'VICTORY'
+    this.state = 'MENU'; // 'MENU', 'STAGE_SELECT', 'GARAGE', 'LOBBY', 'RACING', 'VICTORY'
     this.gameMode = 'gp'; // 'gp', 'timeattack', 'multiplayer'
+
+    // Active track & settings
+    this.currentTrackId = 'beach';
+    this.currentDifficulty = 'normal';
+    this.currentLaps = 3;
 
     // Clock & Timing
     this.clock = new THREE.Clock();
@@ -30,6 +36,8 @@ export class Game {
     this.scene = null;
     this.camera = null;
     this.renderer = null;
+    this.ambientLight = null;
+    this.dirLight = null;
 
     // Camera settings
     this.cameraMode = 0; // 0: Chase Cam, 1: Close Cam, 2: Hood Cam
@@ -77,14 +85,12 @@ export class Game {
 
   initThree() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a0c18);
-    this.scene.fog = new THREE.FogExp2(0x0a0c18, 0.0035);
 
     this.camera = new THREE.PerspectiveCamera(
       65,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      1200
     );
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -93,43 +99,91 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
 
     this.container.appendChild(this.renderer.domElement);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xb0c4de, 0.7);
-    this.scene.add(ambientLight);
+    // Dynamic Lights
+    this.ambientLight = new THREE.AmbientLight(0xffe2c4, 0.75);
+    this.scene.add(this.ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    dirLight.position.set(120, 200, 100);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 2048;
-    dirLight.shadow.mapSize.height = 2048;
-    dirLight.shadow.camera.near = 10;
-    dirLight.shadow.camera.far = 500;
-    dirLight.shadow.camera.left = -250;
-    dirLight.shadow.camera.right = 250;
-    dirLight.shadow.camera.top = 250;
-    dirLight.shadow.camera.bottom = -250;
-    this.scene.add(dirLight);
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    this.dirLight.position.set(120, 220, 100);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.width = 2048;
+    this.dirLight.shadow.mapSize.height = 2048;
+    this.dirLight.shadow.camera.near = 10;
+    this.dirLight.shadow.camera.far = 600;
+    this.dirLight.shadow.camera.left = -300;
+    this.dirLight.shadow.camera.right = 300;
+    this.dirLight.shadow.camera.top = 300;
+    this.dirLight.shadow.camera.bottom = -300;
+    this.scene.add(this.dirLight);
 
-    // World & Systems
-    this.track = new Track(this.scene);
-    this.decorations = new TrackDecorations(this.scene, this.track.spline);
+    // Particles System
     this.particles = new ParticleSystem(this.scene);
-    this.items = new ItemSystem(this.scene, this.track, this.particles, this.audio, this.hud);
 
-    const minimapCanvas = document.getElementById('minimap-canvas');
-    if (minimapCanvas) {
-      this.minimap = new Minimap(minimapCanvas, this.track.spline);
-    }
+    // Load Default Starting Track
+    this.loadTrack(this.currentTrackId);
 
     // Default player car setup for initial menu backdrop
     this.setupPlayerCar(CARS[0], 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg', '#ff2255');
     this.positionCarAtStart(this.playerCar, 0);
 
     window.addEventListener('resize', () => this.onWindowResize());
+  }
+
+  loadTrack(trackId) {
+    const trackDef = getTrackDef(trackId);
+    this.currentTrackId = trackDef.id;
+
+    // 1. Dispose old track and decorations
+    if (this.decorations) {
+      this.decorations.dispose();
+      this.decorations = null;
+    }
+    if (this.track) {
+      this.track.dispose();
+      this.track = null;
+    }
+
+    // 2. Set environment & lighting based on track theme
+    const theme = trackDef.theme || {};
+    this.scene.background = new THREE.Color(theme.sky ?? 0x0a0c18);
+    this.scene.fog = new THREE.FogExp2(theme.fog ?? 0x0a0c18, theme.fogDensity || 0.0035);
+    this.renderer.toneMappingExposure = theme.exposure || 1.1;
+
+    if (this.ambientLight) {
+      this.ambientLight.color.setHex(theme.ambient ?? 0xb0c4de);
+      this.ambientLight.intensity = theme.ambientIntensity || 0.7;
+    }
+    if (this.dirLight) {
+      this.dirLight.color.setHex(theme.sun ?? 0xffffff);
+      this.dirLight.intensity = theme.sunIntensity || 1.4;
+    }
+
+    // 3. Build new Track and themed Decorations
+    this.track = new Track(this.scene, trackDef);
+    this.decorations = new TrackDecorations(this.scene, this.track);
+
+    // 4. Update ItemSystem
+    if (!this.items) {
+      this.items = new ItemSystem(this.scene, this.track, this.particles, this.audio, this.hud);
+    } else {
+      this.items.resetForTrack(this.track);
+    }
+
+    // 5. Update Minimap
+    const minimapCanvas = document.getElementById('minimap-canvas');
+    if (minimapCanvas) {
+      if (!this.minimap) {
+        this.minimap = new Minimap(minimapCanvas, this.track);
+      } else {
+        this.minimap.setTrack(this.track);
+      }
+    }
+
+    // 6. Update HUD stage label
+    this.hud.setStage(trackDef.nameTh);
   }
 
   setupPlayerCar(carConfig, skinFileName, color) {
@@ -147,48 +201,65 @@ export class Game {
   }
 
   positionCarAtStart(car, gridIndex = 0) {
-    const pt = this.track.spline.getPointAt(0);
-    const tangent = this.track.spline.getTangentAt(0).normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const normal = new THREE.Vector3().crossVectors(up, tangent).normalize();
+    if (!this.track || !this.track.samplePos) return;
+
+    const pt = this.track.samplePos[0];
+    const tangent = this.track.sampleTan[0];
+    const normal = this.track.sampleNorm[0];
 
     // 2-wide staggered grid behind start line on home straight
     const row = Math.floor(gridIndex / 2);
     const col = (gridIndex % 2 === 0) ? -1 : 1;
-    const lateralOffset = col * 4.2;
-    const longitudinalOffset = -15 - (row * 12);
+    const lateralOffset = col * (this.track.roadWidth * 0.22);
+    const longitudinalOffset = -12 - (row * 10);
 
     const pos = pt.clone()
       .addScaledVector(tangent, longitudinalOffset)
       .addScaledVector(normal, lateralOffset);
 
-    car.position.set(pos.x, pos.y + 0.4, pos.z);
+    car.position.set(pos.x, 0.35, pos.z);
     car.rotationY = Math.atan2(tangent.x, tangent.z);
     car.speed = 0;
     car.velocity.set(0, 0, 0);
     car.lap = 1;
-    car.currentCheckpoint = 0;
+    car.hasPassedHalfway = false;
+    car.sampleIndexHint = 0;
+    car.totalDistance = 0;
     car.isFinished = false;
+    car.spinTimer = 0;
+    car.isSpinning = false;
   }
 
-  startSinglePlayer(mode = 'gp') {
+  startSinglePlayer(mode = 'gp', trackId = 'beach', difficulty = 'normal', laps = 3) {
     this.gameMode = mode;
+    this.currentDifficulty = difficulty;
+    this.currentLaps = laps;
     this.state = 'RACING';
     this.audio.init();
 
+    // 1. Load selected stage
+    if (!this.track || this.track.def.id !== trackId) {
+      this.loadTrack(trackId);
+    }
+
+    // 2. Setup Player Car
     const playerConfig = this.ui.getPlayerConfig();
     const carConfig = CARS.find(c => c.id === playerConfig.carId) || CARS[0];
     this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color);
+    this.playerCar.totalLaps = laps;
 
     this.clearOpponents();
     this.positionCarAtStart(this.playerCar, 0);
 
+    // 3. Setup AI Competitors if GP mode
     if (mode === 'gp') {
+      const diffMul = DIFFICULTIES[difficulty]?.aiMul || 1.0;
+
       const aiRivalConfigs = [
-        { name: 'ชเร็ค อาชิ (Ogre)', car: 'truck', skin: 'Gemini_Generated_Image_9bccp39bccp39bcc.jpeg', color: '#38b000', lane: -3.5, skill: 0.9 },
-        { name: 'บิกินี่แดง อาชิ (Hot)', car: 'gt', skin: 'qwen_edit_20261004_234512.png', color: '#ff0033', lane: 3.5, skill: 0.92 },
-        { name: 'นกบอมบ์ อาชิ (Bomb)', car: 'muscle', skin: 'Gemini_Generated_Image_w62h0zw62h0zw62h.jpg', color: '#222222', lane: -4.0, skill: 0.88 },
-        { name: 'เสี่ยอาชิ (CEO)', car: 'f1', skin: 'Gemini_Generated_Image_t2e45ct2e45ct2e4.jpeg', color: '#ffd700', lane: 4.0, skill: 0.94 },
+        { name: 'ชเร็ค อาชิ (Ogre)', car: 'truck', skin: 'Gemini_Generated_Image_9bccp39bccp39bcc.jpeg', color: '#38b000', lane: -2.8, skill: 0.90 },
+        { name: 'บิกินี่แดง อาชิ (Hot)', car: 'gt', skin: 'qwen_edit_20261004_234512.png', color: '#ff0033', lane: 2.8, skill: 0.92 },
+        { name: 'นกบอมบ์ อาชิ (Bomb)', car: 'muscle', skin: 'Gemini_Generated_Image_w62h0zw62h0zw62h.jpg', color: '#222222', lane: -3.2, skill: 0.88 },
+        { name: 'เสี่ยอาชิ (CEO)', car: 'f1', skin: 'Gemini_Generated_Image_t2e45ct2e45ct2e4.jpeg', color: '#ffd700', lane: 3.2, skill: 0.94 },
         { name: 'หนอนลาวา อาชิ', car: 'kart', skin: 'Gemini_Generated_Image_kwy6itkwy6itkwy6.jpeg', color: '#ff6600', lane: 0.0, skill: 0.86 }
       ];
 
@@ -196,6 +267,9 @@ export class Game {
         const carDef = CARS.find(c => c.id === cfg.car) || CARS[0];
         const ai = new AICar(carDef, cfg.skin, cfg.color, cfg.name, cfg.lane, cfg.skill);
         ai.game = this;
+        ai.totalLaps = laps;
+        ai.setDifficulty(diffMul);
+
         const built = this.carBuilder.createCar(carDef.id, cfg.skin, cfg.color, true);
         ai.setModel(built);
         this.scene.add(ai.model);
@@ -212,17 +286,37 @@ export class Game {
     this.countdownActive = true;
     this.isRacing = false;
     this.playerCar.speed = 0;
+    this.playerCar.inputs.throttle = 0;
 
-    this.audio.playCountdown(440, 0.15);
-    setTimeout(() => this.audio.playCountdown(440, 0.15), 900);
-    setTimeout(() => this.audio.playCountdown(440, 0.15), 1800);
-    setTimeout(() => this.audio.playCountdown(880, 0.4), 2700);
+    if (this.track && this.track.setStartLights) {
+      this.track.setStartLights(0, false);
+    }
 
-    this.hud.playCountdown(() => {
-      this.countdownActive = false;
-      this.isRacing = true;
-      this.raceStartTime = performance.now();
-    });
+    this.hud.playCountdown(
+      (step) => {
+        if (step === 3) {
+          this.audio.playCountdown(440, 0.18);
+          if (this.track && this.track.setStartLights) this.track.setStartLights(2, false);
+        } else if (step === 2) {
+          this.audio.playCountdown(440, 0.18);
+          if (this.track && this.track.setStartLights) this.track.setStartLights(4, false);
+        } else if (step === 1) {
+          this.audio.playCountdown(440, 0.18);
+          if (this.track && this.track.setStartLights) this.track.setStartLights(5, false);
+        } else if (step === 'GO') {
+          this.audio.playCountdown(880, 0.45);
+          if (this.track && this.track.setStartLights) this.track.setStartLights(5, true);
+          setTimeout(() => {
+            if (this.track && this.track.setStartLights) this.track.setStartLights(0, false);
+          }, 1500);
+        }
+      },
+      () => {
+        this.countdownActive = false;
+        this.isRacing = true;
+        this.raceStartTime = performance.now();
+      }
+    );
   }
 
   clearOpponents() {
@@ -247,9 +341,19 @@ export class Game {
     this.state = 'RACING';
     this.audio.init();
 
+    const settings = packet.settings || {};
+    const trackId = settings.trackId || 'beach';
+    const laps = settings.laps || 3;
+    const aiCount = settings.aiCount || 0;
+
+    if (!this.track || this.track.def.id !== trackId) {
+      this.loadTrack(trackId);
+    }
+
     const playerConfig = this.ui.getPlayerConfig();
     const carConfig = CARS.find(c => c.id === playerConfig.carId) || CARS[0];
     this.setupPlayerCar(carConfig, playerConfig.skinFileName, playerConfig.color);
+    this.playerCar.totalLaps = laps;
 
     this.clearOpponents();
 
@@ -257,12 +361,14 @@ export class Game {
     const myIndex = playersList.findIndex(p => p.id === this.multiplayer.localPlayerId);
     this.positionCarAtStart(this.playerCar, myIndex >= 0 ? myIndex : 0);
 
+    // Remote Players
     playersList.forEach((p, idx) => {
       if (p.id !== this.multiplayer.localPlayerId) {
         const remoteCarDef = CARS.find(c => c.id === p.carId) || CARS[0];
         const remoteSkin = p.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg';
         const remoteCar = new Car(remoteCarDef, remoteSkin, p.color, false);
         remoteCar.game = this;
+        remoteCar.totalLaps = laps;
         const built = this.carBuilder.createCar(remoteCarDef.id, remoteSkin, p.color, true);
         remoteCar.setModel(built);
         this.scene.add(remoteCar.model);
@@ -277,6 +383,23 @@ export class Game {
         });
       }
     });
+
+    // Fill with AI if requested by host
+    if (aiCount > 0) {
+      const startGridIdx = playersList.length;
+      for (let i = 0; i < aiCount; i++) {
+        const aiCarDef = CARS[i % CARS.length];
+        const aiSkin = SKINS[i % SKINS.length].file;
+        const ai = new AICar(aiCarDef, aiSkin, '#ff5500', `บอทอาชิ #${i + 1}`, (i % 2 === 0 ? -2.5 : 2.5), 0.88);
+        ai.game = this;
+        ai.totalLaps = laps;
+        const built = this.carBuilder.createCar(aiCarDef.id, aiSkin, '#ff5500', true);
+        ai.setModel(built);
+        this.scene.add(ai.model);
+        this.positionCarAtStart(ai, startGridIdx + i);
+        this.aiCars.push(ai);
+      }
+    }
 
     this.ui.showView('hud');
     this.startCountdown();
@@ -318,10 +441,10 @@ export class Game {
     }
 
     this.garageCarMesh = this.carBuilder.createCar(carId, skinFileName, color, false);
-    this.garageCarMesh.root.position.set(0, 1, 0);
+    this.garageCarMesh.root.position.set(0, 0.9, 0);
     this.scene.add(this.garageCarMesh.root);
 
-    this.camera.position.set(0, 2.5, 6.5);
+    this.camera.position.set(0, 2.4, 6.5);
     this.camera.lookAt(0, 0.8, 0);
   }
 
@@ -349,7 +472,7 @@ export class Game {
   animate() {
     requestAnimationFrame(() => this.animate());
 
-    const delta = Math.min(this.clock.getDelta(), 0.1);
+    const delta = Math.min(this.clock.getDelta(), 0.08);
 
     if (this.state === 'GARAGE' && this.garageCarMesh) {
       this.garageAngle += delta * 0.6;
@@ -358,12 +481,13 @@ export class Game {
       return;
     }
 
-    if (this.state === 'MENU' || this.state === 'LOBBY') {
+    if (this.state === 'MENU' || this.state === 'STAGE_SELECT' || this.state === 'LOBBY') {
       const time = performance.now() * 0.0003;
       const camX = Math.cos(time) * 45;
       const camZ = Math.sin(time) * 45 + 20;
       this.camera.position.set(camX, 15, camZ);
       this.camera.lookAt(0, 2, 20);
+      if (this.decorations) this.decorations.update(delta, this.camera);
       this.renderer.render(this.scene, this.camera);
       return;
     }
@@ -372,8 +496,10 @@ export class Game {
       this.updateRace(delta);
     }
 
-    this.decorations.update(delta);
-    this.particles.update(delta, this.camera);
+    if (this.track) this.track.update(delta);
+    if (this.decorations) this.decorations.update(delta, this.camera);
+    if (this.particles) this.particles.update(delta, this.camera);
+
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -404,7 +530,7 @@ export class Game {
       this.hud.showReaction('🚀 บูสต์ติดจรวด!', 1200);
     }
 
-    // Tire smoke particles on drift or hard acceleration
+    // Tire smoke particles on drift
     if (this.playerCar.isDrifting) {
       const smokePosL = this.playerCar.position.clone().add(new THREE.Vector3(-0.6, 0.1, -1.0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.playerCar.rotationY));
       const smokePosR = this.playerCar.position.clone().add(new THREE.Vector3(0.6, 0.1, -1.0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.playerCar.rotationY));
@@ -424,8 +550,14 @@ export class Game {
     }
 
     // 2. Update AI Cars
+    const allRacerCars = [
+      this.playerCar,
+      ...this.aiCars,
+      ...Array.from(this.remotePlayers.values()).map(r => r.car)
+    ];
+
     this.aiCars.forEach(ai => {
-      ai.updateAI(delta, this.track, this.playerCar);
+      ai.updateAI(delta, this.track, this.playerCar, allRacerCars);
       if (ai.isDrifting) {
         this.particles.emitTireSmoke(ai.position);
       }
@@ -524,7 +656,7 @@ export class Game {
       lookTargetOffset = new THREE.Vector3(0, 1.1, 12);
     }
 
-    const speedRatio = Math.min(1.5, Math.abs(this.playerCar.speed) / 45);
+    const speedRatio = Math.min(1.5, Math.abs(this.playerCar.speed) / 35);
     const targetFov = (this.playerCar.boostTimer > 0) ? 82 : 65 + (speedRatio * 10);
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 6);
     this.camera.updateProjectionMatrix();
@@ -618,7 +750,7 @@ export class Game {
   }
 
   restartRace() {
-    this.startSinglePlayer(this.gameMode);
+    this.startSinglePlayer(this.gameMode, this.currentTrackId, this.currentDifficulty, this.currentLaps);
   }
 
   exitToMainMenu() {

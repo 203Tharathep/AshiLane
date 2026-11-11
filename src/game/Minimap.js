@@ -1,54 +1,53 @@
 export class Minimap {
-  constructor(canvasElement, spline) {
+  constructor(canvasElement, track) {
     this.canvas = canvasElement;
     this.ctx = this.canvas.getContext('2d');
-    this.spline = spline;
     this.width = this.canvas.width;
     this.height = this.canvas.height;
+    this.setTrack(track);
+  }
 
+  setTrack(track) {
+    this.track = track;
     this.bounds = this.computeBounds();
   }
 
   computeBounds() {
-    let minX = Infinity, maxX = -Infinity;
-    let minZ = Infinity, maxZ = -Infinity;
-
-    for (let i = 0; i <= 200; i++) {
-      const pt = this.spline.getPointAt(i / 200);
-      minX = Math.min(minX, pt.x);
-      maxX = Math.max(maxX, pt.x);
-      minZ = Math.min(minZ, pt.z);
-      maxZ = Math.max(maxZ, pt.z);
+    if (!this.track || !this.track.samplePos) {
+      return { minX: -100, maxX: 100, minZ: -100, maxZ: 100, midX: 0, midZ: 0, maxRange: 200 };
     }
 
-    const padding = 25;
-    const rangeX = (maxX - minX) + padding * 2;
-    const rangeZ = (maxZ - minZ) + padding * 2;
-    const maxRange = Math.max(rangeX, rangeZ);
-    const midX = (minX + maxX) / 2;
-    const midZ = (minZ + maxZ) / 2;
+    const b = this.track.getBounds();
+    const padding = 30;
+    const rangeX = (b.maxX - b.minX) + padding * 2;
+    const rangeZ = (b.maxZ - b.minZ) + padding * 2;
+    const maxRange = Math.max(rangeX, rangeZ, 50);
 
     return {
-      minX, maxX, minZ, maxZ,
-      midX, midZ,
+      minX: b.minX,
+      maxX: b.maxX,
+      minZ: b.minZ,
+      maxZ: b.maxZ,
+      midX: b.cx,
+      midZ: b.cz,
       maxRange
     };
   }
 
   worldToMap(worldX, worldZ) {
     const usableSize = this.width - 24;
-    // Normalized 0 to 1 with 1:1 aspect ratio centered
     const normX = (worldX - (this.bounds.midX - this.bounds.maxRange / 2)) / this.bounds.maxRange;
-    // Invert Z so forward on home straight (+Z) points UP on the minimap
+    // Invert Z so forward on start straight (+Z) points UP on the minimap
     const normZ = ((this.bounds.midZ + this.bounds.maxRange / 2) - worldZ) / this.bounds.maxRange;
 
     return {
-      x: normX * usableSize + 12,
-      y: normZ * usableSize + 12
+      x: Math.max(4, Math.min(this.width - 4, normX * usableSize + 12)),
+      y: Math.max(4, Math.min(this.height - 4, normZ * usableSize + 12))
     };
   }
 
   render(playerCar, otherCars = []) {
+    if (!this.track) return;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
@@ -60,23 +59,25 @@ export class Minimap {
     this.drawPath(ctx);
 
     // Track road outline
-    ctx.strokeStyle = '#324060';
-    ctx.lineWidth = 7;
+    ctx.strokeStyle = this.track.theme?.railB ? `#${this.track.theme.railB.toString(16).padStart(6, '0')}` : '#324060';
+    ctx.lineWidth = 6;
     this.drawPath(ctx);
 
     // Start / Finish marker
-    const startPt = this.spline.getPointAt(0);
-    const startMap = this.worldToMap(startPt.x, startPt.z);
-    ctx.fillStyle = '#00f3ff';
-    ctx.fillRect(startMap.x - 6, startMap.y - 2, 12, 4);
+    const startPt = this.track.samplePos[0];
+    if (startPt) {
+      const startMap = this.worldToMap(startPt.x, startPt.z);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(startMap.x - 5, startMap.y - 2, 10, 4);
+    }
 
     // Render other racers (AI or Friends)
     otherCars.forEach((car) => {
-      if (!car.position) return;
+      if (!car || !car.position) return;
       const m = this.worldToMap(car.position.x, car.position.z);
       ctx.fillStyle = car.bodyColor || '#ffaa00';
       ctx.beginPath();
-      ctx.arc(m.x, m.y, 4.5, 0, Math.PI * 2);
+      ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#000000';
       ctx.lineWidth = 1.5;
@@ -90,10 +91,10 @@ export class Minimap {
       ctx.translate(pm.x, pm.y);
 
       // Pulse ring
-      ctx.strokeStyle = '#00f0ff88';
+      ctx.strokeStyle = '#00f0ffaa';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
       ctx.stroke();
 
       // Heading arrow: Inverted rotation so that rotationY = 0 points UP
@@ -112,13 +113,20 @@ export class Minimap {
   }
 
   drawPath(ctx) {
+    if (!this.track || !this.track.samplePos) return;
+    const N = this.track.sampleCount;
+    const stride = Math.max(1, Math.floor(N / 120));
     ctx.beginPath();
-    const samples = 120;
-    for (let i = 0; i <= samples; i++) {
-      const pt = this.spline.getPointAt(i / samples);
+    let first = true;
+    for (let i = 0; i < N; i += stride) {
+      const pt = this.track.samplePos[i];
       const m = this.worldToMap(pt.x, pt.z);
-      if (i === 0) ctx.moveTo(m.x, m.y);
-      else ctx.lineTo(m.x, m.y);
+      if (first) {
+        ctx.moveTo(m.x, m.y);
+        first = false;
+      } else {
+        ctx.lineTo(m.x, m.y);
+      }
     }
     ctx.closePath();
     ctx.stroke();

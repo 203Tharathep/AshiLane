@@ -2,37 +2,44 @@ import * as THREE from 'three';
 import { Car } from './Car.js';
 
 export class AICar extends Car {
-  constructor(carConfig, skinFileName, bodyColor, aiName, laneOffset = 0, skill = 0.85) {
+  constructor(carConfig, skinFileName, bodyColor, aiName, laneOffset = 0, skill = 0.88) {
     super(carConfig, skinFileName, bodyColor, false);
     this.name = aiName;
-    this.laneOffset = laneOffset; // lateral offset across track (-5 to +5)
+    this.laneOffset = laneOffset; // lateral offset across track (-4 to +4)
     this.skill = skill;
-    this.targetT = 0;
-    this.lookAheadDistance = 0.035; // t lookahead on spline
+    this.currentT = 0;
+    this.lookAheadDistance = 0.035; // t lookahead on track
+
+    this.stuckTimer = 0;
+    this.itemThinkTimer = 0;
+    this.aiDifficultyMul = 1.0;
   }
 
-  updateAI(delta, track, playerCar) {
-    if (!track || !track.spline) return;
+  setDifficulty(mul = 1.0) {
+    this.aiDifficultyMul = mul;
+  }
 
-    // Determine current spline progress t
-    const closest = track.getClosestPointAndT(this.position);
+  updateAI(delta, track, playerCar, allCars = []) {
+    if (!track) return;
+
+    // Fast track lookup
+    const closest = track.getClosest(this.position, this.sampleIndexHint);
+    this.sampleIndexHint = closest.index;
     this.currentT = closest.t;
 
-    // Target a point slightly ahead on the spline
+    // Lookahead target point along spline with lane offset
     const targetT = (closest.t + this.lookAheadDistance) % 1;
-    const centerTarget = track.spline.getPointAt(targetT);
-    const tangent = track.spline.getTangentAt(targetT).normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    const normal = new THREE.Vector3().crossVectors(up, tangent).normalize();
+    const targetIdx = track.indexFromT(targetT);
+    const centerTarget = track.samplePos[targetIdx];
+    const normal = track.sampleNorm[targetIdx];
 
-    // Offset target into AI's designated lane
     const targetPoint = centerTarget.clone().addScaledVector(normal, this.laneOffset);
+    targetPoint.y = 0.35;
 
-    // Vector to target point
+    // Heading calculation
     const toTarget = new THREE.Vector3().subVectors(targetPoint, this.position);
     toTarget.y = 0;
 
-    // Angle to target
     const currentHeading = new THREE.Vector3(Math.sin(this.rotationY), 0, Math.cos(this.rotationY));
     const targetHeading = toTarget.clone().normalize();
 
@@ -40,31 +47,94 @@ export class AICar extends Car {
     const dot = currentHeading.dot(targetHeading);
     const angleDiff = Math.atan2(cross.y, dot);
 
-    // Steer towards target
-    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * 2.8, -1, 1);
+    // Steer towards target point
+    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * 2.6, -1, 1);
 
-    // Speed / Throttle control based on upcoming track curvature
-    const curvature = Math.abs(angleDiff);
-    if (curvature > 0.42) {
-      // Sharp turn: throttle down or drift!
-      this.inputs.throttle = 0.70;
-      if (this.speed > 16 && Math.random() < 0.06) {
+    // Speed / Throttle control
+    const trackCurv = Math.abs(track.sampleCurv[targetIdx] || 0);
+    const turnSeverity = Math.max(Math.abs(angleDiff), trackCurv * 35);
+
+    const baseTrackMul = track.def?.aiSpeedMul || 1.0;
+    const effectiveSkill = this.skill * this.aiDifficultyMul * baseTrackMul;
+
+    if (turnSeverity > 0.45) {
+      // Sharp corner
+      this.inputs.throttle = 0.65 * effectiveSkill;
+      if (this.speed > 14 && Math.random() < 0.12) {
         this.inputs.drift = true;
       }
+    } else if (turnSeverity > 0.22) {
+      // Medium corner
+      this.inputs.throttle = 0.85 * effectiveSkill;
+      this.inputs.drift = false;
     } else {
-      this.inputs.throttle = 1.0;
+      // Straightaway: full gas
+      this.inputs.throttle = 1.0 * effectiveSkill;
       this.inputs.drift = false;
 
-      // Random nitro boost on straightaways
-      if (curvature < 0.12 && Math.random() < 0.015 && this.nitroFuel > 40) {
+      // Smart boost on straightaways
+      if (turnSeverity < 0.12 && this.nitroFuel > 40 && Math.random() < 0.02) {
         this.inputs.boost = true;
       } else {
         this.inputs.boost = false;
       }
     }
 
+    // AI Item Usage
+    this.itemThinkTimer += delta;
+    if (this.itemThinkTimer > 0.8) {
+      this.itemThinkTimer = 0;
+      this.thinkAndUseItem(track, playerCar, allCars);
+    }
+
+    // Stuck detection & recovery
+    if (Math.abs(this.speed) < 2.5 && this.inputs.throttle > 0.3) {
+      this.stuckTimer += delta;
+      if (this.stuckTimer > 2.5) {
+        this.respawn(track);
+        this.stuckTimer = 0;
+      }
+    } else {
+      this.stuckTimer = Math.max(0, this.stuckTimer - delta * 2);
+    }
+
     // Call base physics & visual update
     super.update(delta, track);
   }
-}
 
+  thinkAndUseItem(track, playerCar, allCars) {
+    if (!this.currentItem || !this.game || !this.game.items) return;
+
+    const item = this.currentItem;
+
+    if (item === 'boost') {
+      // Boost on straight
+      if (Math.abs(this.steeringAngle) < 0.2) {
+        this.game.items.useItem(this);
+      }
+    } else if (item === 'banana') {
+      // Drop banana if someone is right behind
+      const behindDist = 18;
+      const someoneBehind = allCars.some(c => {
+        if (c === this) return false;
+        const d = this.position.distanceTo(c.position);
+        return d < behindDist && (this.totalDistance > c.totalDistance);
+      });
+      if (someoneBehind || Math.random() < 0.25) {
+        this.game.items.useItem(this);
+      }
+    } else if (item === 'missile') {
+      // Fire missile if someone is in front
+      const someoneAhead = allCars.some(c => {
+        if (c === this) return false;
+        const d = this.position.distanceTo(c.position);
+        return d < 40 && (c.totalDistance > this.totalDistance);
+      });
+      if (someoneAhead || Math.random() < 0.35) {
+        this.game.items.useItem(this);
+      }
+    } else if (item === 'shield') {
+      this.game.items.useItem(this);
+    }
+  }
+}

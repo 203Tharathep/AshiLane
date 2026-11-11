@@ -7,18 +7,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-CyGD1MKn.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BkwFipoj.css">
+  <script type="module" crossorigin src="/assets/index-zZxgFCbG.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-DajQB0hu.css">
 </head>
 <body>
   <div id="canvas-container"></div>
 
   <!-- HUD: In-Race Overlay -->
   <div id="hud" class="hidden">
-    <!-- Top Left: Lap & Position -->
+    <!-- Top Left: Lap & Position & Stage -->
     <div class="hud-top-left">
       <div id="hud-rank" class="rank-badge">1<span>st</span></div>
       <div class="lap-box">
+        <div id="hud-stage-name" class="stage-badge">บุรีรัมย์ ไนท์ กรังด์ปรีซ์</div>
         <div id="hud-lap" class="lap-text">LAP 1 / 3</div>
         <div id="hud-time" class="time-text">00:00.00</div>
         <div id="hud-best" class="best-text">BEST: --:--.--</div>
@@ -33,8 +34,9 @@
       <span class="item-key-hint">[Q] หรือ [F] ใช้ไอเทม</span>
     </div>
 
-    <!-- Top Right: Minimap Radar -->
+    <!-- Top Right: Minimap Radar & Pause Button -->
     <div class="hud-top-right">
+      <button id="btn-hud-pause" class="hud-pause-btn" title="หยุดเกม [ESC / P]">⏸️</button>
       <canvas id="minimap-canvas" width="160" height="160"></canvas>
     </div>
 
@@ -147,6 +149,49 @@
     </div>
   </div>
 
+  <!-- VIEW 1.5: Stage & Difficulty Select -->
+  <div id="view-stage-select" class="ui-view hidden">
+    <div class="stage-select-card">
+      <div class="stage-select-header">
+        <h2 id="stage-select-title">🏆 เลือกด่านแข่งขัน (AI Grand Prix)</h2>
+        <button id="btn-stage-back" class="btn btn-back">◀ ย้อนกลับ</button>
+      </div>
+
+      <!-- Stage Cards Grid -->
+      <div id="stages-grid" class="stages-grid"></div>
+
+      <!-- Match Options -->
+      <div class="stage-options-box">
+        <!-- Difficulty row (for GP) -->
+        <div id="stage-difficulty-row" class="option-row">
+          <span class="option-label">ความยากของ AI:</span>
+          <div class="pills-group">
+            <button class="diff-pill" data-diff="easy">ง่าย (Easy)</button>
+            <button class="diff-pill active" data-diff="normal">ปกติ (Normal)</button>
+            <button class="diff-pill" data-diff="hard">ยาก (Hard)</button>
+          </div>
+        </div>
+
+        <!-- Laps row -->
+        <div class="option-row">
+          <span class="option-label">จำนวนรอบ:</span>
+          <div class="pills-group">
+            <button class="laps-pill" data-laps="1">1 รอบ (Sprint)</button>
+            <button class="laps-pill" data-laps="2">2 รอบ</button>
+            <button class="laps-pill active" data-laps="3">3 รอบ (GP)</button>
+            <button class="laps-pill" data-laps="5">5 รอบ</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-select-footer">
+        <button id="btn-start-selected-race" class="btn btn-primary pulse-btn btn-lg">
+          🚀 เริ่มการแข่งขัน (Start Race)
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- VIEW 2: Garage & Customization -->
   <div id="view-garage" class="ui-view hidden">
     <div class="garage-header">
@@ -244,6 +289,15 @@
 
       <!-- Host Settings -->
       <div id="lobby-host-controls" class="lobby-settings-box">
+        <div class="setting-item">
+          <label>เลือกสนาม (Track / Stage):</label>
+          <select id="lobby-stage-select">
+            <option value="beach">🏖️ ด่าน 1: ซันเซ็ตบีช สปีดเวย์</option>
+            <option value="buriram" selected>🌃 ด่าน 2: บุรีรัมย์ ไนท์ กรังด์ปรีซ์</option>
+            <option value="snow">❄️ ด่าน 3: ยอดเขาหิมะ เซอร์กิต</option>
+            <option value="volcano">🌋 ด่าน 4: ภูเขาไฟอาชิ อินเฟอร์โน</option>
+          </select>
+        </div>
         <div class="setting-item">
           <label>จำนวนรอบ (Laps):</label>
           <select id="lobby-laps-select">

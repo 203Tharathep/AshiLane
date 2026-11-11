@@ -9,6 +9,7 @@ export class HUD {
     this.rankText = document.getElementById('hud-rank');
     this.timeText = document.getElementById('hud-time');
     this.bestText = document.getElementById('hud-best');
+    this.stageText = document.getElementById('hud-stage-name');
     this.driverPortrait = document.getElementById('hud-driver-img');
     this.driverName = document.getElementById('hud-driver-name');
     this.reactionBubble = document.getElementById('hud-reaction-bubble');
@@ -30,6 +31,12 @@ export class HUD {
 
   hide() {
     if (this.container) this.container.classList.add('hidden');
+  }
+
+  setStage(stageName) {
+    if (this.stageText) {
+      this.stageText.textContent = stageName || '';
+    }
   }
 
   setItem(itemType) {
@@ -80,7 +87,7 @@ export class HUD {
     if (this.driftBar) {
       if (playerCar.isDrifting) {
         this.driftBar.parentElement.style.opacity = '1';
-        const pct = Math.min(100, (playerCar.driftTimer / 2.2) * 100);
+        const pct = Math.min(100, (playerCar.driftTimer / 2.0) * 100);
         this.driftBar.style.width = `${pct}%`;
         if (playerCar.driftLevel === 3) {
           this.driftBar.style.background = '#dd00ff';
@@ -98,8 +105,9 @@ export class HUD {
     }
 
     // Lap
+    const maxLaps = playerCar.totalLaps || 3;
     if (this.lapText) {
-      this.lapText.textContent = `LAP ${Math.min(3, playerCar.lap)} / 3`;
+      this.lapText.textContent = `LAP ${Math.min(maxLaps, playerCar.lap)} / ${maxLaps}`;
     }
 
     // Rank
@@ -149,8 +157,9 @@ export class HUD {
     }
   }
 
-  playCountdown(callback) {
+  playCountdown(onStep, callback) {
     if (!this.countdownOverlay || !this.countdownText) {
+      if (onStep) onStep('GO');
       if (callback) callback();
       return;
     }
@@ -162,11 +171,13 @@ export class HUD {
       if (count > 0) {
         this.countdownText.textContent = count;
         this.countdownText.className = 'countdown-num pulse';
+        if (onStep) onStep(count);
         count--;
         setTimeout(tick, 900);
       } else if (count === 0) {
         this.countdownText.textContent = 'GO!';
         this.countdownText.className = 'countdown-num go pulse';
+        if (onStep) onStep('GO');
         count--;
         if (callback) callback();
         setTimeout(() => {

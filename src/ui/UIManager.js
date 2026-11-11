@@ -1,6 +1,7 @@
 import confetti from 'canvas-confetti';
 import { CARS } from '../data/carsData.js';
-import { SKINS, ALL_IMAGE_FILES } from '../data/skinsData.js';
+import { SKINS } from '../data/skinsData.js';
+import { TRACKS, DIFFICULTIES } from '../data/tracksData.js';
 
 export class UIManager {
   constructor(game) {
@@ -8,6 +9,7 @@ export class UIManager {
 
     // View Elements
     this.viewMenu = document.getElementById('view-menu');
+    this.viewStageSelect = document.getElementById('view-stage-select');
     this.viewGarage = document.getElementById('view-garage');
     this.viewLobby = document.getElementById('view-lobby');
     this.viewVictory = document.getElementById('view-victory');
@@ -18,19 +20,26 @@ export class UIManager {
     this.currentColor = '#ff2255';
     this.playerName = localStorage.getItem('ashilane_name') || 'นักซิ่งอาชิ';
 
+    // Stage Selection State
+    this.selectedTrackId = 'beach';
+    this.selectedDifficulty = 'normal';
+    this.selectedLaps = 3;
+    this.targetGameMode = 'gp';
+
     this.initEventListeners();
     this.populateGarageSkins();
     this.updateGarageStats();
+    this.populateStageCards();
   }
 
   initEventListeners() {
     // Menu buttons
     document.getElementById('btn-play-single')?.addEventListener('click', () => {
-      this.game.startSinglePlayer('gp');
+      this.openStageSelect('gp');
     });
 
     document.getElementById('btn-play-timeattack')?.addEventListener('click', () => {
-      this.game.startSinglePlayer('timeattack');
+      this.openStageSelect('timeattack');
     });
 
     document.getElementById('btn-open-garage')?.addEventListener('click', () => {
@@ -54,6 +63,42 @@ export class UIManager {
       const isPlaying = this.game.audio.toggleBgm();
       const btn = document.getElementById('btn-toggle-bgm');
       if (btn) btn.textContent = isPlaying ? '🎵 เพลง: เปิด' : '🔇 เพลง: ปิด';
+    });
+
+    // Stage Select controls
+    document.getElementById('btn-stage-back')?.addEventListener('click', () => {
+      this.showView('menu');
+    });
+
+    document.getElementById('btn-start-selected-race')?.addEventListener('click', () => {
+      this.game.startSinglePlayer(
+        this.targetGameMode,
+        this.selectedTrackId,
+        this.selectedDifficulty,
+        this.selectedLaps
+      );
+    });
+
+    // Difficulty buttons in Stage Select
+    document.querySelectorAll('.diff-pill').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const diff = btn.dataset.diff;
+        if (diff) {
+          this.selectedDifficulty = diff;
+          document.querySelectorAll('.diff-pill').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        }
+      });
+    });
+
+    // Laps buttons in Stage Select
+    document.querySelectorAll('.laps-pill').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const laps = parseInt(btn.dataset.laps || '3');
+        this.selectedLaps = laps;
+        document.querySelectorAll('.laps-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
     });
 
     // Garage Controls
@@ -125,7 +170,8 @@ export class UIManager {
     document.getElementById('btn-start-race')?.addEventListener('click', () => {
       const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3');
       const aiCount = parseInt(document.getElementById('lobby-ai-select')?.value || '2');
-      this.game.multiplayer.startRace({ laps, aiCount });
+      const trackId = document.getElementById('lobby-stage-select')?.value || 'beach';
+      this.game.multiplayer.startRace({ laps, aiCount, trackId });
     });
 
     document.getElementById('btn-ready')?.addEventListener('click', () => {
@@ -144,7 +190,7 @@ export class UIManager {
 
     // In-game Emote Soundboard buttons
     document.querySelectorAll('.emote-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const emoteText = btn.textContent;
         this.game.sendEmote(emoteText);
       });
@@ -163,11 +209,12 @@ export class UIManager {
   }
 
   showView(viewName) {
-    [this.viewMenu, this.viewGarage, this.viewLobby, this.viewVictory].forEach(v => {
+    [this.viewMenu, this.viewStageSelect, this.viewGarage, this.viewLobby, this.viewVictory].forEach(v => {
       if (v) v.classList.add('hidden');
     });
 
     if (viewName === 'menu') this.viewMenu?.classList.remove('hidden');
+    else if (viewName === 'stage_select') this.viewStageSelect?.classList.remove('hidden');
     else if (viewName === 'garage') this.viewGarage?.classList.remove('hidden');
     else if (viewName === 'lobby') this.viewLobby?.classList.remove('hidden');
     else if (viewName === 'victory') this.viewVictory?.classList.remove('hidden');
@@ -177,6 +224,74 @@ export class UIManager {
     } else {
       this.game.hud.hide();
     }
+  }
+
+  openStageSelect(mode = 'gp') {
+    this.targetGameMode = mode;
+    const titleEl = document.getElementById('stage-select-title');
+    if (titleEl) {
+      titleEl.textContent = mode === 'gp' ? '🏆 เลือกด่านแข่งขัน (AI Grand Prix)' : '⏱️ เลือกด่านจับเวลา (Time Attack)';
+    }
+
+    const diffBox = document.getElementById('stage-difficulty-row');
+    if (diffBox) {
+      diffBox.style.display = mode === 'gp' ? 'flex' : 'none';
+    }
+
+    this.showView('stage_select');
+  }
+
+  populateStageCards() {
+    const container = document.getElementById('stages-grid');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const stageIcons = {
+      beach: '🏖️',
+      buriram: '🌃',
+      snow: '❄️',
+      volcano: '🌋'
+    };
+
+    const stageBadges = {
+      beach: 'มือใหม่ & สปีด',
+      buriram: 'แสงสีนีออน',
+      snow: 'ดริฟต์หิมะ',
+      volcano: 'ความเร็วสูงสุด'
+    };
+
+    TRACKS.forEach(t => {
+      const card = document.createElement('div');
+      const isSelected = t.id === this.selectedTrackId;
+      card.className = `stage-card ${isSelected ? 'selected' : ''} stage-${t.id}`;
+      card.dataset.id = t.id;
+
+      const stars = '★'.repeat(t.difficulty) + '☆'.repeat(4 - t.difficulty);
+
+      card.innerHTML = `
+        <div class="stage-card-header">
+          <span class="stage-num">${t.stageLabel}</span>
+          <span class="stage-stars">${stars}</span>
+        </div>
+        <div class="stage-card-visual">
+          <span class="stage-icon">${stageIcons[t.id] || '🏎️'}</span>
+          <div class="stage-tag">${stageBadges[t.id] || 'GRAND PRIX'}</div>
+        </div>
+        <div class="stage-card-body">
+          <h3 class="stage-name">${t.nameTh}</h3>
+          <div class="stage-name-en">${t.name}</div>
+          <p class="stage-desc">${t.desc}</p>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        this.selectedTrackId = t.id;
+        document.querySelectorAll('.stage-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      });
+
+      container.appendChild(card);
+    });
   }
 
   populateGarageSkins() {
@@ -333,8 +448,8 @@ export class UIManager {
     // Confetti blast!
     try {
       confetti({
-        particleCount: 150,
-        spread: 80,
+        particleCount: 160,
+        spread: 85,
         origin: { y: 0.6 }
       });
     } catch (e) {}
@@ -362,4 +477,3 @@ export class UIManager {
     }
   }
 }
-
