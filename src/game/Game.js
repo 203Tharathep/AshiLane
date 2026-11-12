@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Track } from './Track.js';
-import { TrackDecorations } from './TrackDecorations.js';
+import { TrackDecorations, STAGE_ATMOSPHERE } from './TrackDecorations.js';
 import { CarModelBuilder } from './CarModelBuilder.js';
 import { Car } from './Car.js';
 import { AICar } from './AICar.js';
@@ -136,22 +136,32 @@ export class Game {
     this.hemiLight = new THREE.HemisphereLight(0xffc89a, 0x6a4a2a, 0.75);
     this.scene.add(this.hemiLight);
 
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.55);
-    this.dirLight.position.set(38, 65, 28);
+    this.sunOffset = new THREE.Vector3(68, 28, 42);
+    this.rimOffset = new THREE.Vector3(-55, 18, -36);
+
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.65);
+    this.dirLight.position.copy(this.sunOffset);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = 2048;
     this.dirLight.shadow.mapSize.height = 2048;
-    this.dirLight.shadow.camera.near = 5;
-    this.dirLight.shadow.camera.far = 180;
-    const shadowD = 44;
+    this.dirLight.shadow.camera.near = 2;
+    this.dirLight.shadow.camera.far = 220;
+    const shadowD = 62;
     this.dirLight.shadow.camera.left = -shadowD;
     this.dirLight.shadow.camera.right = shadowD;
     this.dirLight.shadow.camera.top = shadowD;
     this.dirLight.shadow.camera.bottom = -shadowD;
-    this.dirLight.shadow.bias = -0.0004;
+    this.dirLight.shadow.bias = -0.0003;
     this.dirLight.shadow.normalBias = 0.025;
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
+
+    // Secondary non-shadow rim/fill light for dramatic 3D silhouette separation
+    this.rimLight = new THREE.DirectionalLight(0x26c6da, 0.58);
+    this.rimLight.position.copy(this.rimOffset);
+    this.rimLight.castShadow = false;
+    this.scene.add(this.rimLight);
+    this.scene.add(this.rimLight.target);
 
     // Particles System
     this.particles = new ParticleSystem(this.scene);
@@ -180,25 +190,36 @@ export class Game {
       this.track = null;
     }
 
-    // 2. Set environment & lighting based on track theme
+    // 2. Set environment & dramatic 3D stage lighting based on track theme + atmosphere
     const theme = trackDef.theme || {};
-    this.scene.background = new THREE.Color(theme.sky ?? 0x0a0c18);
-    this.scene.fog = new THREE.FogExp2(theme.fog ?? 0x0a0c18, theme.fogDensity || 0.0035);
-    this.renderer.toneMappingExposure = theme.exposure || 1.1;
+    const atmo = STAGE_ATMOSPHERE[trackDef.id] || STAGE_ATMOSPHERE.beach;
+    const fogColor = atmo.fogColor ?? theme.fog ?? 0x0a0c18;
+    this.scene.background = new THREE.Color(fogColor);
+    this.scene.fog = new THREE.FogExp2(fogColor, atmo.fogDensity ?? theme.fogDensity ?? 0.0028);
+    this.renderer.toneMappingExposure = atmo.exposure ?? theme.exposure ?? 1.1;
+
+    this.sunOffset.set(...atmo.sunDir);
+    this.rimOffset.set(...atmo.rimDir);
 
     if (this.ambientLight) {
-      this.ambientLight.color.setHex(theme.ambient ?? 0xb0c4de);
-      this.ambientLight.intensity = (theme.ambientIntensity || 0.7) * 0.65;
+      this.ambientLight.color.setHex(atmo.ambientColor ?? theme.ambient ?? 0xb0c4de);
+      this.ambientLight.intensity = atmo.ambientIntensity ?? 0.45;
     }
     if (this.hemiLight) {
-      this.hemiLight.color.setHex(theme.hemiSky ?? 0x88bbff);
-      this.hemiLight.groundColor.setHex(theme.hemiGround ?? 0x222233);
-      this.hemiLight.intensity = (theme.ambientIntensity || 0.7) * 1.05;
+      this.hemiLight.color.setHex(atmo.hemiSky ?? theme.hemiSky ?? 0x88bbff);
+      this.hemiLight.groundColor.setHex(atmo.hemiGround ?? theme.hemiGround ?? 0x222233);
+      this.hemiLight.intensity = atmo.hemiIntensity ?? 0.85;
     }
     if (this.dirLight) {
-      this.dirLight.color.setHex(theme.sun ?? 0xffffff);
-      this.dirLight.intensity = theme.sunIntensity || 1.45;
+      this.dirLight.color.setHex(atmo.sunColor ?? theme.sun ?? 0xffffff);
+      this.dirLight.intensity = atmo.sunIntensity ?? theme.sunIntensity ?? 1.65;
     }
+    if (this.rimLight) {
+      this.rimLight.color.setHex(atmo.rimColor ?? 0x00d2ff);
+      this.rimLight.intensity = atmo.rimIntensity ?? 0.55;
+      this.rimLight.visible = this.state !== 'GARAGE';
+    }
+    this.updateDynamicShadows(new THREE.Vector3(0, 0, 15));
 
     // 3. Build new Track and themed Decorations
     this.track = new Track(this.scene, trackDef);
@@ -325,6 +346,7 @@ export class Game {
       this.prevSceneBackground = null;
       this.prevSceneFog = null;
     }
+    if (this.rimLight) this.rimLight.visible = true;
 
     // 1. Load selected stage
     if (!this.track || this.track.def.id !== trackId) {
@@ -875,6 +897,7 @@ export class Game {
       this.prevSceneBackground = null;
       this.prevSceneFog = null;
     }
+    if (this.rimLight) this.rimLight.visible = true;
 
     const settings = packet.settings || {};
     const trackId = settings.trackId || 'beach';
@@ -1630,6 +1653,12 @@ export class Game {
     }
     this.scene.background = new THREE.Color(0x0c0f1a);
     this.scene.fog = new THREE.FogExp2(0x0c0f1a, 0.006);
+    if (this.rimLight) this.rimLight.visible = false;
+    if (this.dirLight && this.dirLight.target) {
+      this.dirLight.position.set(16, 26, 18);
+      this.dirLight.target.position.set(0.3, 0.5, 0);
+      this.dirLight.target.updateMatrixWorld();
+    }
 
     if (this.garageCarMesh) {
       this.scene.remove(this.garageCarMesh.root);
@@ -1684,6 +1713,7 @@ export class Game {
       this.prevSceneBackground = null;
       this.prevSceneFog = null;
     }
+    if (this.rimLight) this.rimLight.visible = true;
 
     // Update PlayerCar with new car, skin, color, and addons for main menu backdrop
     const playerConfig = this.ui.getPlayerConfig();
@@ -1778,6 +1808,7 @@ export class Game {
       const camZ = Math.sin(time) * 45 + 20;
       this.camera.position.set(camX, 15, camZ);
       this.camera.lookAt(0, 2, 20);
+      this.updateDynamicShadows(new THREE.Vector3(0, 0, 20));
       if (this.decorations) this.decorations.update(delta, this.camera);
       this.renderer.render(this.scene, this.camera);
       return;
@@ -1785,6 +1816,9 @@ export class Game {
 
     if (this.state === 'GRID_INTRO') {
       this.updateGridIntro(delta);
+      const gridIdx = Math.min(this.gridCurrentIndex || 0, Math.max(0, (this.gridCars?.length || 1) - 1));
+      const gridFocal = this.gridCars?.[gridIdx]?.car?.position || this.playerCar?.position || new THREE.Vector3(0, 0, 0);
+      this.updateDynamicShadows(gridFocal);
       if (this.track) this.track.update(delta);
       if (this.decorations) this.decorations.update(delta, this.camera);
       if (this.particles) this.particles.update(delta, this.camera);
@@ -1798,30 +1832,42 @@ export class Game {
       this.updateVictoryScene(delta);
     }
 
-    // Dynamic Shadow Frustum Tracking (Crisp Real-Time Shadows on Active Cars)
-    if (this.dirLight && this.dirLight.target) {
-      let focalPos = null;
-      if (this.state === 'RACING' && this.playerCar && this.playerCar.position) {
-        focalPos = this.playerCar.position;
-      } else if (this.state === 'GRID_INTRO' && this.gridCars && this.gridCars.length > 0) {
-        const idx = Math.min(this.gridCurrentIndex || 0, this.gridCars.length - 1);
-        focalPos = this.gridCars[idx]?.car?.position || null;
-      } else if (this.state === 'VICTORY' && this.podiumFocusCar && this.podiumFocusCar.position) {
-        focalPos = this.podiumFocusCar.position;
-      }
-
-      if (focalPos) {
-        this.dirLight.position.set(focalPos.x + 36, focalPos.y + 64, focalPos.z + 28);
-        this.dirLight.target.position.set(focalPos.x, focalPos.y, focalPos.z);
-        this.dirLight.target.updateMatrixWorld();
-      }
+    // Dynamic Shadow Frustum & Rim Light Tracking
+    let focalPos = null;
+    if (this.state === 'RACING' && this.playerCar && this.playerCar.position) {
+      focalPos = this.playerCar.position;
+    } else if (this.state === 'VICTORY' && this.podiumFocusCar && this.podiumFocusCar.position) {
+      focalPos = this.podiumFocusCar.position;
     }
+    this.updateDynamicShadows(focalPos);
 
     if (this.track) this.track.update(delta);
     if (this.decorations) this.decorations.update(delta, this.camera);
     if (this.particles) this.particles.update(delta, this.camera);
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  updateDynamicShadows(focalPos) {
+    if (!focalPos) return;
+    if (this.dirLight && this.dirLight.target && this.sunOffset) {
+      this.dirLight.position.set(
+        focalPos.x + this.sunOffset.x,
+        focalPos.y + this.sunOffset.y,
+        focalPos.z + this.sunOffset.z
+      );
+      this.dirLight.target.position.set(focalPos.x, focalPos.y, focalPos.z);
+      this.dirLight.target.updateMatrixWorld();
+    }
+    if (this.rimLight && this.rimLight.target && this.rimOffset) {
+      this.rimLight.position.set(
+        focalPos.x + this.rimOffset.x,
+        focalPos.y + this.rimOffset.y,
+        focalPos.z + this.rimOffset.z
+      );
+      this.rimLight.target.position.set(focalPos.x, focalPos.y, focalPos.z);
+      this.rimLight.target.updateMatrixWorld();
+    }
   }
 
   updateRace(delta) {

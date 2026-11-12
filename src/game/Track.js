@@ -300,24 +300,71 @@ export class Track {
     roadTex.colorSpace = THREE.SRGBColorSpace;
     roadTex.anisotropy = 16;
 
+    // Procedural asphalt grain bump map & racing-line/puddle roughness map
+    const bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = 256;
+    bumpCanvas.height = 512;
+    const bctx = bumpCanvas.getContext('2d');
+    bctx.fillStyle = '#808080';
+    bctx.fillRect(0, 0, 256, 512);
+    for (let i = 0; i < 6500; i++) {
+      const v = 90 + ((i * 73) % 85);
+      bctx.fillStyle = `rgb(${v},${v},${v})`;
+      bctx.fillRect((i * 47) % 256, (i * 113) % 512, 2, 2);
+    }
+    const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+    bumpTex.wrapS = THREE.ClampToEdgeWrapping;
+    bumpTex.wrapT = THREE.RepeatWrapping;
+
+    const roughCanvas = document.createElement('canvas');
+    roughCanvas.width = 256;
+    roughCanvas.height = 512;
+    const rctx = roughCanvas.getContext('2d');
+    rctx.fillStyle = this.def.id === 'buriram' ? '#b8b8b8' : '#e0e0e0';
+    rctx.fillRect(0, 0, 256, 512);
+    // Subtle smoother worn racing grooves + glossy puddles in night circuit
+    const grooveCol = this.def.id === 'buriram' ? 'rgba(40,40,40,0.45)' : 'rgba(130,130,130,0.28)';
+    rctx.fillStyle = grooveCol;
+    rctx.fillRect(58, 0, 28, 512);
+    rctx.fillRect(170, 0, 28, 512);
+    if (this.def.id === 'buriram' || this.def.id === 'snow') {
+      for (let p = 0; p < 18; p++) {
+        const px = 28 + ((p * 89) % 200);
+        const py = (p * 137) % 512;
+        const rg = rctx.createRadialGradient(px, py, 2, px, py, 28);
+        rg.addColorStop(0, 'rgba(30,30,30,0.65)');
+        rg.addColorStop(1, 'rgba(30,30,30,0)');
+        rctx.fillStyle = rg;
+        rctx.beginPath();
+        rctx.ellipse(px, py, 22, 38, 0, 0, Math.PI * 2);
+        rctx.fill();
+      }
+    }
+    const roughTex = new THREE.CanvasTexture(roughCanvas);
+    roughTex.wrapS = THREE.ClampToEdgeWrapping;
+    roughTex.wrapT = THREE.RepeatWrapping;
+
     let roadRoughness = 0.72;
     let roadMetalness = 0.08;
     if (this.def.id === 'buriram') {
       // Buriram Night GP: Wet tarmac with specular reflections under floodlights
-      roadRoughness = 0.28;
-      roadMetalness = 0.35;
+      roadRoughness = 0.36;
+      roadMetalness = 0.38;
     } else if (this.def.id === 'snow') {
       // Frosty Peak: Cold frozen sheen
-      roadRoughness = 0.40;
-      roadMetalness = 0.20;
+      roadRoughness = 0.44;
+      roadMetalness = 0.22;
     } else if (this.def.id === 'volcano') {
       // Ashi Volcano: Basalt dark asphalt
-      roadRoughness = 0.65;
-      roadMetalness = 0.15;
+      roadRoughness = 0.68;
+      roadMetalness = 0.16;
     }
 
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
+      bumpMap: bumpTex,
+      bumpScale: this.def.id === 'volcano' ? 0.06 : 0.038,
+      roughnessMap: roughTex,
       roughness: roadRoughness,
       metalness: roadMetalness,
       side: THREE.DoubleSide
@@ -355,10 +402,32 @@ export class Track {
 
     const half = this.roadWidth / 2;
     const k = this.kerbWidth;
-    this.kerbMeshL = this.buildStrip(-half - k, -half, 0.055, 0.055, 6, kerbMat);
-    this.kerbMeshR = this.buildStrip(half, half + k, 0.055, 0.055, 6, kerbMat);
-    this.kerbMeshL.receiveShadow = true;
-    this.kerbMeshR.receiveShadow = true;
+    const peak = k * 0.32;
+    // True 3D beveled raised kerbs casting crisp edge shadows onto the road
+    const kerbInL = this.buildStrip(-half - peak, -half, 0.16, 0.05, 6, kerbMat);
+    const kerbOutL = this.buildStrip(-half - k, -half - peak, 0.09, 0.16, 6, kerbMat);
+    const kerbInR = this.buildStrip(half, half + peak, 0.05, 0.16, 6, kerbMat);
+    const kerbOutR = this.buildStrip(half + peak, half + k, 0.16, 0.09, 6, kerbMat);
+    this.kerbMeshL = kerbInL;
+    this.kerbMeshR = kerbInR;
+    [kerbInL, kerbOutL, kerbInR, kerbOutR].forEach(m => {
+      m.castShadow = true;
+      m.receiveShadow = true;
+    });
+
+    // Graded 3D perimeter shoulder embankments blending barrier bases smoothly into terrain
+    const outerHalf = this.trackWidth / 2;
+    const shoulderColor = this.def.id === 'snow' ? 0xbcd6ef : this.def.id === 'volcano' ? 0x261614 : this.def.id === 'buriram' ? 0x1d2536 : 0xdcc39b;
+    const shoulderMat = new THREE.MeshStandardMaterial({
+      color: shoulderColor,
+      roughness: 0.92,
+      metalness: 0.04,
+      side: THREE.DoubleSide
+    });
+    const bermL = this.buildStrip(-outerHalf - 3.4, -outerHalf, -0.04, 0.22, 10, shoulderMat);
+    const bermR = this.buildStrip(outerHalf, outerHalf + 3.4, 0.22, -0.04, 10, shoulderMat);
+    bermL.receiveShadow = true;
+    bermR.receiveShadow = true;
   }
 
   buildCrashBarriers() {
@@ -410,23 +479,86 @@ export class Track {
     });
 
     const half = this.trackWidth / 2;
-    [-half, half].forEach((offset, sideIdx) => {
-      const wall = this.buildStrip(offset, offset, 0, this.wallHeight, 8, wallMat, true);
-      wall.castShadow = true;
-      wall.receiveShadow = true;
+    const wallThickness = 0.38;
+    const capMat = new THREE.MeshStandardMaterial({
+      color: 0x2a303d,
+      roughness: 0.42,
+      metalness: 0.65,
+      side: THREE.DoubleSide
+    });
 
-      // Glowing top rail
+    // Instanced structural H-posts along both barriers casting crisp 3D shadows
+    const postStride = Math.max(4, Math.round(12 / this.sampleSpacing));
+    const postTransforms = [];
+
+    [-half, half].forEach((offset, sideIdx) => {
+      const outSign = sideIdx === 0 ? -1 : 1;
+      const outerOffset = offset + outSign * wallThickness;
+      const wallIn = this.buildStrip(offset, offset, 0, this.wallHeight, 8, wallMat, true);
+      const wallOut = this.buildStrip(outerOffset, outerOffset, 0, this.wallHeight, 8, wallMat, true);
+      const capMin = Math.min(offset, outerOffset);
+      const capMax = Math.max(offset, outerOffset);
+      const wallTop = this.buildStrip(capMin, capMax, this.wallHeight, this.wallHeight, 8, capMat, false);
+
+      [wallIn, wallOut, wallTop].forEach(w => {
+        w.castShadow = true;
+        w.receiveShadow = true;
+      });
+
+      // Glowing neon top rail + soft additive glow sleeve
       const railPts = [];
       for (let i = 0; i < this.sampleCount; i += 2) {
         const p = this.samplePos[i];
         const n = this.sampleNorm[i];
-        railPts.push(new THREE.Vector3(p.x + n.x * offset, this.wallHeight, p.z + n.z * offset));
+        railPts.push(new THREE.Vector3(p.x + n.x * (offset + outSign * 0.05), this.wallHeight + 0.06, p.z + n.z * (offset + outSign * 0.05)));
       }
       const railCurve = new THREE.CatmullRomCurve3(railPts, true);
-      const railGeo = new THREE.TubeGeometry(railCurve, Math.min(1200, railPts.length), 0.08, 5, true);
-      const railMat = new THREE.MeshBasicMaterial({ color: sideIdx === 0 ? (this.theme.railA ?? 0xff0055) : (this.theme.railB ?? 0x00f3ff) });
+      const railCol = sideIdx === 0 ? (this.theme.railA ?? 0xff0055) : (this.theme.railB ?? 0x00f3ff);
+      const railGeo = new THREE.TubeGeometry(railCurve, Math.min(1200, railPts.length), 0.075, 5, true);
+      const railMat = new THREE.MeshBasicMaterial({ color: railCol });
       this.group.add(new THREE.Mesh(railGeo, railMat));
+
+      const haloGeo = new THREE.TubeGeometry(railCurve, Math.min(900, railPts.length), 0.16, 5, true);
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: railCol,
+        transparent: true,
+        opacity: 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      this.group.add(new THREE.Mesh(haloGeo, haloMat));
+
+      for (let i = 0; i < this.sampleCount; i += postStride) {
+        const p = this.samplePos[i];
+        const n = this.sampleNorm[i];
+        const tan = this.sampleTan[i];
+        const midOff = offset + outSign * (wallThickness * 0.55);
+        postTransforms.push({
+          x: p.x + n.x * midOff,
+          z: p.z + n.z * midOff,
+          tan
+        });
+      }
     });
+
+    if (postTransforms.length) {
+      const postGeo = new THREE.BoxGeometry(0.46, this.wallHeight + 0.24, 0.24);
+      const postMat = new THREE.MeshStandardMaterial({ color: 0x3b4252, metalness: 0.8, roughness: 0.32 });
+      const posts = new THREE.InstancedMesh(postGeo, postMat, postTransforms.length);
+      posts.castShadow = true;
+      posts.receiveShadow = true;
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const s = new THREE.Vector3(1, 1, 1);
+      const pos = new THREE.Vector3();
+      postTransforms.forEach((pt, idx) => {
+        q.setFromUnitVectors(Z_AXIS, pt.tan);
+        pos.set(pt.x, (this.wallHeight + 0.24) * 0.5, pt.z);
+        m.compose(pos, q, s);
+        posts.setMatrixAt(idx, m);
+      });
+      this.group.add(posts);
+    }
   }
 
   buildStartFinishLine() {
@@ -485,18 +617,82 @@ export class Track {
 
     const steelMat = new THREE.MeshStandardMaterial({ color: 0x1f222a, metalness: 0.85, roughness: 0.3 });
     const housingMat = new THREE.MeshStandardMaterial({ color: 0x111114, metalness: 0.9, roughness: 0.2 });
+    const accentMat = new THREE.MeshBasicMaterial({ color: this.theme.railB ?? 0x00f3ff });
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff5db });
 
-    const colGeo = new THREE.CylinderGeometry(0.5, 0.6, 9.5, 12);
+    const colGeo = new THREE.CylinderGeometry(0.55, 0.7, 10.6, 12);
     const colL = new THREE.Mesh(colGeo, steelMat);
     colL.position.copy(pt).addScaledVector(normal, -halfWidth);
-    colL.position.y = 4.75;
+    colL.position.y = 5.3;
+    colL.castShadow = true;
+    colL.receiveShadow = true;
     const colR = new THREE.Mesh(colGeo, steelMat);
     colR.position.copy(pt).addScaledVector(normal, halfWidth);
-    colR.position.y = 4.75;
+    colR.position.y = 5.3;
+    colR.castShadow = true;
+    colR.receiveShadow = true;
 
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(this.trackWidth + 4, 1.6, 1.4), steelMat);
-    beam.position.set(pt.x, 9.5, pt.z);
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
+    // 3D double-chord overhead steel truss
+    const beamLower = new THREE.Mesh(new THREE.BoxGeometry(this.trackWidth + 4.4, 0.75, 1.5), steelMat);
+    beamLower.position.set(pt.x, 9.2, pt.z);
+    beamLower.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
+    beamLower.castShadow = true;
+    beamLower.receiveShadow = true;
+
+    const beamUpper = new THREE.Mesh(new THREE.BoxGeometry(this.trackWidth + 4.4, 0.55, 1.5), steelMat);
+    beamUpper.position.set(pt.x, 10.6, pt.z);
+    beamUpper.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
+    beamUpper.castShadow = true;
+    beamUpper.receiveShadow = true;
+
+    const trussGroup = new THREE.Group();
+    trussGroup.position.set(pt.x, 9.9, pt.z);
+    trussGroup.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
+    const strutGeo = new THREE.BoxGeometry(0.24, 1.55, 1.1);
+    for (let sx = -this.trackWidth * 0.5; sx <= this.trackWidth * 0.5; sx += 2.4) {
+      const strut = new THREE.Mesh(strutGeo, steelMat);
+      strut.position.set(sx, 0, 0);
+      strut.rotation.z = sx % 4.8 === 0 ? 0.35 : -0.35;
+      strut.castShadow = true;
+      trussGroup.add(strut);
+    }
+
+    // Overhead stadium floodlight pods pointing onto start grid
+    const floodGroup = new THREE.Group();
+    floodGroup.position.set(pt.x, 9.0, pt.z);
+    floodGroup.quaternion.setFromUnitVectors(Z_AXIS, facing);
+    [-6.8, -3.4, 3.4, 6.8].forEach(lx => {
+      const pod = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.45, 0.6), housingMat);
+      pod.position.set(lx, 0.35, 1.1);
+      pod.rotation.x = 0.48;
+      const lens = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.3), lampMat);
+      lens.position.set(0, 0, 0.31);
+      pod.add(lens);
+      floodGroup.add(pod);
+    });
+    const edgeGlow = new THREE.Mesh(new THREE.BoxGeometry(this.trackWidth + 4.4, 0.12, 1.58), accentMat);
+    edgeGlow.position.set(pt.x, 8.85, pt.z);
+    edgeGlow.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
+
+    // Subtle illuminated spotlight glow pool on start/finish grid asphalt
+    const poolC = document.createElement('canvas');
+    poolC.width = 128;
+    poolC.height = 128;
+    const pctx = poolC.getContext('2d');
+    const pg = pctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+    pg.addColorStop(0, 'rgba(255, 245, 215, 0.28)');
+    pg.addColorStop(0.55, 'rgba(0, 220, 255, 0.10)');
+    pg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    pctx.fillStyle = pg;
+    pctx.fillRect(0, 0, 128, 128);
+    const poolTex = new THREE.CanvasTexture(poolC);
+    poolTex.colorSpace = THREE.SRGBColorSpace;
+    const gridPool = new THREE.Mesh(
+      new THREE.PlaneGeometry(this.roadWidth * 1.1, 22).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    gridPool.position.set(pt.x, 0.08, pt.z).addScaledVector(facing, 6);
+    gridPool.quaternion.setFromUnitVectors(Z_AXIS, facing);
 
     // F1 style start lights (5 pods) - driven by setStartLights()
     const lightsGroup = new THREE.Group();
@@ -505,7 +701,8 @@ export class Track {
       const mat = new THREE.MeshBasicMaterial({ color: 0x220004 });
       this.startLightMats.push(mat);
       const pod = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, 0.5), housingMat);
-      pod.position.set((i - 2) * 1.8, 0, 0.8);
+      pod.position.set((i - 2) * 1.8, 0, 0.85);
+      pod.castShadow = true;
       const b1 = new THREE.Mesh(bulbGeo, mat);
       b1.position.set(0, 0.4, 0.26);
       const b2 = new THREE.Mesh(bulbGeo, mat);
@@ -513,7 +710,7 @@ export class Track {
       pod.add(b1, b2);
       lightsGroup.add(pod);
     }
-    lightsGroup.position.set(pt.x, 8.4, pt.z);
+    lightsGroup.position.set(pt.x, 8.2, pt.z);
     lightsGroup.quaternion.setFromUnitVectors(Z_AXIS, facing);
 
     // Banner
@@ -542,14 +739,19 @@ export class Track {
 
     const bannerTex = new THREE.CanvasTexture(bannerCanvas);
     bannerTex.colorSpace = THREE.SRGBColorSpace;
+    const bannerHousing = new THREE.Mesh(new THREE.BoxGeometry(12.4, 2.5, 0.4), housingMat);
+    bannerHousing.position.set(pt.x, 12.1, pt.z).addScaledVector(facing, 0.6);
+    bannerHousing.quaternion.setFromUnitVectors(Z_AXIS, facing);
+    bannerHousing.castShadow = true;
+
     const bannerMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(12, 2.2),
       new THREE.MeshBasicMaterial({ map: bannerTex })
     );
-    bannerMesh.position.set(pt.x, 10.9, pt.z).addScaledVector(facing, 0.75);
+    bannerMesh.position.set(pt.x, 12.1, pt.z).addScaledVector(facing, 0.82);
     bannerMesh.quaternion.setFromUnitVectors(Z_AXIS, facing);
 
-    gantry.add(colL, colR, beam, lightsGroup, bannerMesh);
+    gantry.add(colL, colR, beamLower, beamUpper, trussGroup, floodGroup, edgeGlow, gridPool, lightsGroup, bannerHousing, bannerMesh);
     this.group.add(gantry);
   }
 
@@ -614,17 +816,33 @@ export class Track {
           texCache[distM].colorSpace = THREE.SRGBColorSpace;
         }
 
+        const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.8, 8);
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x606878, metalness: 0.8, roughness: 0.3 });
+
+        const bx = p.x + n.x * outsideSign * (half + 1.4);
+        const bz = p.z + n.z * outsideSign * (half + 1.4);
+        const q = new THREE.Quaternion().setFromUnitVectors(Z_AXIS, tan.clone().negate());
+
         const board = new THREE.Mesh(boardGeo, new THREE.MeshStandardMaterial({ map: texCache[distM] }));
-        board.position.set(p.x + n.x * outsideSign * (half + 1.4), 1.2, p.z + n.z * outsideSign * (half + 1.4));
-        board.quaternion.setFromUnitVectors(Z_AXIS, tan.clone().negate());
-        this.group.add(board);
+        board.position.set(bx, 1.85, bz);
+        board.quaternion.copy(q);
+        board.castShadow = true;
+        board.receiveShadow = true;
+
+        const post = new THREE.Mesh(poleGeo, poleMat);
+        post.position.set(bx, 0.9, bz);
+        post.castShadow = true;
+
+        this.group.add(board, post);
       });
     });
   }
 
   buildTireBarriers() {
-    const tireMat = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.9 });
-    const tireGeo = new THREE.TorusGeometry(0.4, 0.16, 6, 12);
+    const tireMatDark = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.88 });
+    const tireMatRed = new THREE.MeshStandardMaterial({ color: 0xd92638, roughness: 0.55 });
+    const tireMatWhite = new THREE.MeshStandardMaterial({ color: 0xf2f4f8, roughness: 0.55 });
+    const tireGeo = new THREE.TorusGeometry(0.42, 0.17, 6, 12);
     tireGeo.rotateX(Math.PI / 2);
     const half = this.trackWidth / 2;
 
@@ -634,11 +852,13 @@ export class Track {
         const i = this.wrapIndex(corner.index + s * (4 / this.sampleSpacing));
         const p = this.samplePos[i];
         const n = this.sampleNorm[i];
-        const base = new THREE.Vector3(p.x + n.x * outsideSign * (half + 1.0), 0, p.z + n.z * outsideSign * (half + 1.0));
+        const base = new THREE.Vector3(p.x + n.x * outsideSign * (half + 1.15), 0, p.z + n.z * outsideSign * (half + 1.15));
+        const stackMat = (s + 3) % 2 === 0 ? tireMatRed : tireMatWhite;
         for (let row = 0; row < 3; row++) {
-          const tire = new THREE.Mesh(tireGeo, tireMat);
-          tire.position.set(base.x, 0.16 + row * 0.3, base.z);
-          tire.castShadow = row === 2;
+          const tire = new THREE.Mesh(tireGeo, row === 1 ? stackMat : tireMatDark);
+          tire.position.set(base.x, 0.17 + row * 0.32, base.z);
+          tire.castShadow = true;
+          tire.receiveShadow = true;
           this.group.add(tire);
         }
       }
@@ -694,6 +914,9 @@ export class Track {
     const padGeo = new THREE.PlaneGeometry(6, 12);
     padGeo.rotateX(Math.PI / 2);
 
+    const railGeo = new THREE.BoxGeometry(0.22, 0.08, 12.2);
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x006688, metalness: 0.8, roughness: 0.2 });
+
     (this.def.boostPads || []).forEach((t, k) => {
       const i = this.indexFromT(t);
       const lateral = (k % 3 - 1) * (this.roadWidth * 0.22);
@@ -702,6 +925,14 @@ export class Track {
       mesh.quaternion.setFromUnitVectors(Z_AXIS, this.sampleTan[i]);
       mesh.position.set(p.x, 0.09, p.z);
       this.group.add(mesh);
+
+      [-3.1, 3.1].forEach(sideOff => {
+        const bezel = new THREE.Mesh(railGeo, railMat);
+        bezel.position.set(p.x + this.sampleNorm[i].x * sideOff, 0.09, p.z + this.sampleNorm[i].z * sideOff);
+        bezel.quaternion.setFromUnitVectors(Z_AXIS, this.sampleTan[i]);
+        this.group.add(bezel);
+      });
+
       this.boostPads.push({ mesh, position: new THREE.Vector3(p.x, 0.35, p.z), tangent: this.sampleTan[i], radius: 4.2 });
     });
   }
@@ -730,7 +961,7 @@ export function disposeObject3D(root) {
   });
   geos.forEach(g => g.dispose());
   mats.forEach(m => {
-    ['map', 'emissiveMap', 'alphaMap'].forEach(key => {
+    ['map', 'emissiveMap', 'alphaMap', 'bumpMap', 'roughnessMap'].forEach(key => {
       const tex = m[key];
       if (tex && !(tex.userData && tex.userData.shared)) tex.dispose();
     });
