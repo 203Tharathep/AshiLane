@@ -1,25 +1,7 @@
 
-/* Lobby Exit Button in Header */
+/* Lobby Header */
 .lobby-header {
   position: relative;
-}
-.btn-leave-top {
-  position: absolute;
-  top: 0;
-  left: 0;
-  padding: 5px 12px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
-  cursor: pointer;
-  z-index: 10;
-}
-.btn-leave-top:hover {
-  background: #f87171;
-  transform: translateY(-1px);
 }
 
 /* Starting Grid "click for skip" bottom right hint */
@@ -3383,21 +3365,45 @@ body, html {
   }
   .garage-turntable-controls {
     position: absolute !important;
-    bottom: 24px !important; /* Elevated above bottom home-bar indicator so whole buttons are visible */
+    bottom: 22px !important; /* Elevated above bottom home-bar indicator */
     right: 10px !important;
-    padding: 4px 8px !important;
-    gap: 4px !important;
-    transform: scale(0.85) !important;
-    transform-origin: bottom right !important;
-    background: rgba(11, 15, 28, 0.92) !important;
+    left: auto !important;
+    padding: 3px 6px !important;
+    gap: 3px !important;
+    transform: none !important;
+    background: rgba(11, 15, 28, 0.94) !important;
     border: 1px solid rgba(0, 243, 255, 0.45) !important;
-    border-radius: 20px !important;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8) !important;
-    max-width: 68vw !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8) !important;
+    max-width: calc(100vw - 215px) !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+  }
+  .garage-turntable-controls::-webkit-scrollbar {
+    display: none !important;
+  }
+  .garage-turntable-controls .tt-group {
+    display: flex !important;
+    align-items: center !important;
+    gap: 2px !important;
+    flex-shrink: 0 !important;
   }
   .garage-turntable-controls .tt-btn {
-    padding: 4px 8px !important;
-    font-size: 0.68rem !important;
+    padding: 3px 6px !important;
+    font-size: 0.65rem !important;
+    border-radius: 8px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+  .garage-turntable-controls .tt-divider {
+    height: 16px !important;
+    margin: 0 2px !important;
+    flex-shrink: 0 !important;
   }
   .garage-drag-hint {
     display: none !important;

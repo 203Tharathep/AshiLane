@@ -2138,6 +2138,16 @@ export class Game {
     this.gyroRoll = 0;
     this.cameraRoll = 0;
 
+    // Mobile / Desktop Web Audio unlock on user gestures
+    const unlockAudio = () => {
+      this.audio.unlockMobileAudio();
+    };
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+    window.addEventListener('touchend', unlockAudio, { passive: true });
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('click', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+
     window.addEventListener('keydown', (e) => {
       this.keys[e.code] = true;
 
@@ -2177,10 +2187,18 @@ export class Game {
       const el = document.getElementById(id);
       if (!el) return;
       const setKey = (val) => { this.keys[keyName] = val; };
-      el.addEventListener('touchstart', (e) => { e.preventDefault(); setKey(true); }, { passive: false });
+      el.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.audio.unlockMobileAudio();
+        setKey(true);
+      }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
       el.addEventListener('touchcancel', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
-      el.addEventListener('mousedown', (e) => { e.preventDefault(); setKey(true); });
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        this.audio.unlockMobileAudio();
+        setKey(true);
+      });
       el.addEventListener('mouseup', () => { setKey(false); });
       el.addEventListener('mouseleave', () => { setKey(false); });
     };

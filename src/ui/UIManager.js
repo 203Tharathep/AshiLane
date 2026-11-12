@@ -318,7 +318,6 @@ export class UIManager {
       this.showView('menu');
     };
     document.getElementById('btn-leave-lobby')?.addEventListener('click', handleLeaveLobby);
-    document.getElementById('btn-leave-lobby-top')?.addEventListener('click', handleLeaveLobby);
 
     // Victory Screen buttons
     document.getElementById('btn-victory-restart')?.addEventListener('click', () => {

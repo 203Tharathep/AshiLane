@@ -26,16 +26,56 @@ export class AudioManager {
   init() {
     if (this.ctx) {
       if (this.ctx.state === 'suspended') {
-        this.ctx.resume();
+        this.ctx.resume().catch(() => {});
       }
       return;
     }
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
-    this.ctx = new AudioContext();
+    try {
+      this.ctx = new AudioContext();
+      this.setupEngineSynth();
+      this.setupScreechSynth();
+    } catch (e) {
+      console.warn('AudioContext init error:', e);
+    }
+  }
 
-    this.setupEngineSynth();
-    this.setupScreechSynth();
+  unlockMobileAudio() {
+    this.init();
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    // Mobile unlock: kick a 1-sample silent Web Audio buffer
+    try {
+      const buffer = this.ctx.createBuffer(1, 1, 22050);
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.ctx.destination);
+      source.start(0);
+    } catch (e) {}
+
+    // Prime speech synthesis on mobile user interaction
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window && !this.speechPrimed) {
+      try {
+        const u = new SpeechSynthesisUtterance('');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+        this.speechPrimed = true;
+      } catch (e) {}
+    }
+  }
+
+  ensureActive() {
+    if (this.isMuted) return false;
+    if (!this.ctx) {
+      this.init();
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return !!this.ctx;
   }
 
   setupEngineSynth() {
@@ -110,10 +150,7 @@ export class AudioManager {
   }
 
   updateEngine(speedKmh, throttle, isDrifting, isBoost) {
-    if (!this.ctx || this.isMuted) return;
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
-    }
+    if (!this.ensureActive()) return;
 
     const baseFreq = 55;
     const speedPitch = (speedKmh / 280) * 190;
@@ -135,36 +172,8 @@ export class AudioManager {
     }
   }
 
-  playGridIntroSwoosh() {
-    if (!this.ctx || this.isMuted) return;
-    const now = this.ctx.currentTime;
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(220, now);
-    osc.frequency.exponentialRampToValueAtTime(880, now + 0.7);
-
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.exponentialRampToValueAtTime(3200, now + 0.7);
-
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.exponentialRampToValueAtTime(0.20, now + 0.12);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start(now);
-    osc.stop(now + 1.1);
-  }
-
   playCountdown(pitch = 440, duration = 0.15) {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
@@ -180,7 +189,7 @@ export class AudioManager {
   }
 
   playCountdownTick(seconds = 5) {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     try {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
@@ -200,7 +209,7 @@ export class AudioManager {
   }
 
   playBoostSound() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     try {
       const now = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
@@ -234,7 +243,7 @@ export class AudioManager {
   }
 
   playCollisionThud() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
@@ -252,7 +261,7 @@ export class AudioManager {
   }
 
   playItemPickup() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const notes = [587.33, 880];
     notes.forEach((freq, idx) => {
       const osc = this.ctx.createOscillator();
@@ -270,7 +279,7 @@ export class AudioManager {
   }
 
   playSlip() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sawtooth';
@@ -285,7 +294,7 @@ export class AudioManager {
   }
 
   playMissileShoot() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'square';
@@ -300,7 +309,7 @@ export class AudioManager {
   }
 
   playGridIntroSwoosh() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const now = this.ctx.currentTime;
 
     try {
@@ -348,7 +357,7 @@ export class AudioManager {
   }
 
   playLeaderboardRankPop(step = 0, total = 7, isPlayer = false) {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     try {
       const now = this.ctx.currentTime;
       // Rising pitch as we climb closer to 1st place
@@ -390,7 +399,7 @@ export class AudioManager {
   }
 
   playVictoryChime() {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const now = this.ctx.currentTime;
 
     // Debounce: prevent overlapping crowd noises or rapid repeating
@@ -478,7 +487,7 @@ export class AudioManager {
   }
 
   startBgm() {
-    if (!this.ctx || this.bgmPlaying) return;
+    if (!this.ensureActive() || this.bgmPlaying) return;
     this.bgmPlaying = true;
 
     const bassline = [110, 110, 130.81, 146.83, 110, 110, 164.81, 146.83];
@@ -613,7 +622,7 @@ export class AudioManager {
   }
 
   playAnnouncerImpact(isPlayer = false) {
-    if (!this.ctx || this.isMuted) return;
+    if (!this.ensureActive()) return;
     const now = this.ctx.currentTime;
 
     try {
