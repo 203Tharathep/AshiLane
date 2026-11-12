@@ -298,12 +298,28 @@ export class Track {
     roadTex.wrapS = THREE.ClampToEdgeWrapping;
     roadTex.wrapT = THREE.RepeatWrapping;
     roadTex.colorSpace = THREE.SRGBColorSpace;
-    roadTex.anisotropy = 8;
+    roadTex.anisotropy = 16;
+
+    let roadRoughness = 0.72;
+    let roadMetalness = 0.08;
+    if (this.def.id === 'buriram') {
+      // Buriram Night GP: Wet tarmac with specular reflections under floodlights
+      roadRoughness = 0.28;
+      roadMetalness = 0.35;
+    } else if (this.def.id === 'snow') {
+      // Frosty Peak: Cold frozen sheen
+      roadRoughness = 0.40;
+      roadMetalness = 0.20;
+    } else if (this.def.id === 'volcano') {
+      // Ashi Volcano: Basalt dark asphalt
+      roadRoughness = 0.65;
+      roadMetalness = 0.15;
+    }
 
     const roadMat = new THREE.MeshStandardMaterial({
       map: roadTex,
-      roughness: 0.82,
-      metalness: 0.05,
+      roughness: roadRoughness,
+      metalness: roadMetalness,
       side: THREE.DoubleSide
     });
 
@@ -325,6 +341,7 @@ export class Track {
     kerbTex.wrapS = THREE.ClampToEdgeWrapping;
     kerbTex.wrapT = THREE.RepeatWrapping;
     kerbTex.colorSpace = THREE.SRGBColorSpace;
+    kerbTex.anisotropy = 16;
 
     const kerbMat = new THREE.MeshStandardMaterial({
       map: kerbTex,

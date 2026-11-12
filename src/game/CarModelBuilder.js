@@ -604,6 +604,47 @@ export class CarModelBuilder {
     chassis.add(headLightR);
     chassis.add(headLightR.target);
 
+    // Soft Ground Ambient Occlusion / Contact Shadow disc beneath chassis
+    let contactShadowMesh = null;
+    if (typeof document !== 'undefined') {
+      const shadowCanvas = document.createElement('canvas');
+      shadowCanvas.width = 128;
+      shadowCanvas.height = 256;
+      const sCtx = shadowCanvas.getContext('2d');
+      if (sCtx) {
+        const sGrad = sCtx.createRadialGradient(64, 128, 12, 64, 128, 115);
+        sGrad.addColorStop(0, 'rgba(0, 0, 0, 0.88)');
+        sGrad.addColorStop(0.48, 'rgba(0, 0, 0, 0.48)');
+        sGrad.addColorStop(0.82, 'rgba(0, 0, 0, 0.14)');
+        sGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        sCtx.fillStyle = sGrad;
+        sCtx.fillRect(0, 0, 128, 256);
+        const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+        contactShadowMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(2.35, 4.3),
+          new THREE.MeshBasicMaterial({
+            map: shadowTex,
+            transparent: true,
+            opacity: 0.82,
+            depthWrite: false
+          })
+        );
+        contactShadowMesh.rotateX(-Math.PI / 2);
+        contactShadowMesh.position.set(0, 0.04, 0);
+        chassis.add(contactShadowMesh);
+      }
+    }
+
+    // Enable high-definition shadow casting and receiving on all car body panels, spoilers, and rims
+    root.traverse((child) => {
+      if (child.isMesh) {
+        if (child !== underglowMesh && child !== contactShadowMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      }
+    });
+
     return {
       root,
       chassis,

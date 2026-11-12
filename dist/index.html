@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
     href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap"
-    rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-DUlOvvdd.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-C0gF1TYj.css">
+    rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-Dd6cIyrw.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CQKRvmxd.css">
 </head>
 
 <body>
@@ -56,9 +56,8 @@
         คันที่ไม่ทันจะคิดอันดับตามระยะที่เหลือถึงเส้นชัย</div>
     </div>
 
-    <!-- Top Right: Minimap Radar, Pause & Gyro Controls -->
+    <!-- Top Right: Minimap Radar & Pause Controls -->
     <div class="hud-top-right">
-      <button id="btn-toggle-gyro" class="hud-gyro-btn" title="เปิด/ปิดการเอียงโทรศัพท์บังคับ">📱 เอียงเครื่อง: เปิด</button>
       <button id="btn-hud-pause" class="hud-pause-btn" title="หยุดเกม [ESC / P]">⏸️</button>
       <canvas id="minimap-canvas" width="160" height="160"></canvas>
     </div>
@@ -66,7 +65,7 @@
     <!-- Floating Reaction Toast -->
     <div id="hud-reaction-bubble" class="reaction-bubble">สปีดดด!</div>
 
-    <!-- Bottom Right: Speedometer & Nitro Gauges -->
+    <!-- Bottom Right / Center on mobile: Speedometer & Nitro Gauges -->
     <div class="hud-bottom-right">
       <div class="drift-gauge-container">
         <div class="drift-gauge-label">MINI-TURBO DRIFT</div>
@@ -100,11 +99,32 @@
         <button id="btn-touch-right" class="t-btn t-steer" aria-label="เลี้ยวขวา">▶</button>
       </div>
       <div class="touch-actions">
-        <button id="btn-touch-drift" class="t-btn t-drift" aria-label="ดริฟต์">DRIFT</button>
-        <button id="btn-touch-boost" class="t-btn t-boost" aria-label="ไนโตร">NITRO</button>
-        <button id="btn-touch-brake" class="t-btn t-brake" aria-label="เบรก">BRAKE</button>
-        <button id="btn-touch-gas" class="t-btn t-gas" aria-label="คันเร่ง">GAS</button>
+        <div class="touch-row-top">
+          <button id="btn-touch-drift" class="t-btn t-drift" aria-label="ดริฟต์">DRIFT</button>
+          <button id="btn-touch-boost" class="t-btn t-boost" aria-label="ไนโตร">NITRO</button>
+        </div>
+        <div class="touch-row-bottom">
+          <button id="btn-touch-brake" class="t-btn t-brake" aria-label="เบรก">BRAKE</button>
+          <button id="btn-touch-gas" class="t-btn t-gas" aria-label="คันเร่ง">GAS</button>
+        </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Mobile Landscape Orientation Recommendation Overlay -->
+  <div id="landscape-prompt" class="landscape-prompt-overlay">
+    <div class="landscape-prompt-card">
+      <div class="rotate-phone-icon">
+        <svg viewBox="0 0 100 100" width="60" height="60" fill="none" stroke="#00f3ff" stroke-width="4">
+          <rect x="25" y="15" width="50" height="70" rx="8" stroke="#00f3ff" />
+          <circle cx="50" cy="74" r="3" fill="#00f3ff" />
+          <path d="M 50 15 A 35 35 0 0 1 85 50" stroke="#ffd700" stroke-width="4" stroke-dasharray="4 4" />
+          <polygon points="85,42 93,52 81,54" fill="#ffd700" />
+        </svg>
+      </div>
+      <div class="landscape-prompt-title">🏎️ เพื่อการแข่งที่สนุกที่สุด</div>
+      <div class="landscape-prompt-text">กรุณาหมุนโทรศัพท์เป็น <strong>แนวนอน (Landscape)</strong><br>เพื่อมุมมองสนามและการบังคับที่สมบูรณ์แบบ</div>
+      <button id="btn-dismiss-landscape" class="btn-dismiss-prompt" type="button">เล่นต่อในแนวตั้ง</button>
     </div>
   </div>
 
@@ -599,7 +619,7 @@
 
     </div>
   </div>
-
+
 </body>
 
 </html>

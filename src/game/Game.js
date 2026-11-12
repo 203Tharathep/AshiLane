@@ -120,22 +120,29 @@ export class Game {
 
     this.container.appendChild(this.renderer.domElement);
 
-    // Dynamic Lights
-    this.ambientLight = new THREE.AmbientLight(0xffe2c4, 0.75);
+    // Dynamic Atmosphere & Sunlight Lighting
+    this.ambientLight = new THREE.AmbientLight(0xffe2c4, 0.45);
     this.scene.add(this.ambientLight);
 
-    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    this.dirLight.position.set(120, 220, 100);
+    this.hemiLight = new THREE.HemisphereLight(0xffc89a, 0x6a4a2a, 0.75);
+    this.scene.add(this.hemiLight);
+
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.55);
+    this.dirLight.position.set(38, 65, 28);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.width = 2048;
     this.dirLight.shadow.mapSize.height = 2048;
-    this.dirLight.shadow.camera.near = 10;
-    this.dirLight.shadow.camera.far = 600;
-    this.dirLight.shadow.camera.left = -300;
-    this.dirLight.shadow.camera.right = 300;
-    this.dirLight.shadow.camera.top = 300;
-    this.dirLight.shadow.camera.bottom = -300;
+    this.dirLight.shadow.camera.near = 5;
+    this.dirLight.shadow.camera.far = 180;
+    const shadowD = 44;
+    this.dirLight.shadow.camera.left = -shadowD;
+    this.dirLight.shadow.camera.right = shadowD;
+    this.dirLight.shadow.camera.top = shadowD;
+    this.dirLight.shadow.camera.bottom = -shadowD;
+    this.dirLight.shadow.bias = -0.0004;
+    this.dirLight.shadow.normalBias = 0.025;
     this.scene.add(this.dirLight);
+    this.scene.add(this.dirLight.target);
 
     // Particles System
     this.particles = new ParticleSystem(this.scene);
@@ -172,11 +179,16 @@ export class Game {
 
     if (this.ambientLight) {
       this.ambientLight.color.setHex(theme.ambient ?? 0xb0c4de);
-      this.ambientLight.intensity = theme.ambientIntensity || 0.7;
+      this.ambientLight.intensity = (theme.ambientIntensity || 0.7) * 0.65;
+    }
+    if (this.hemiLight) {
+      this.hemiLight.color.setHex(theme.hemiSky ?? 0x88bbff);
+      this.hemiLight.groundColor.setHex(theme.hemiGround ?? 0x222233);
+      this.hemiLight.intensity = (theme.ambientIntensity || 0.7) * 1.05;
     }
     if (this.dirLight) {
       this.dirLight.color.setHex(theme.sun ?? 0xffffff);
-      this.dirLight.intensity = theme.sunIntensity || 1.4;
+      this.dirLight.intensity = theme.sunIntensity || 1.45;
     }
 
     // 3. Build new Track and themed Decorations
@@ -1622,6 +1634,25 @@ export class Game {
       this.updateVictoryScene(delta);
     }
 
+    // Dynamic Shadow Frustum Tracking (Crisp Real-Time Shadows on Active Cars)
+    if (this.dirLight && this.dirLight.target) {
+      let focalPos = null;
+      if (this.state === 'RACING' && this.playerCar && this.playerCar.position) {
+        focalPos = this.playerCar.position;
+      } else if (this.state === 'GRID_INTRO' && this.gridCars && this.gridCars.length > 0) {
+        const idx = Math.min(this.gridCurrentIndex || 0, this.gridCars.length - 1);
+        focalPos = this.gridCars[idx]?.car?.position || null;
+      } else if (this.state === 'VICTORY' && this.podiumFocusCar && this.podiumFocusCar.position) {
+        focalPos = this.podiumFocusCar.position;
+      }
+
+      if (focalPos) {
+        this.dirLight.position.set(focalPos.x + 36, focalPos.y + 64, focalPos.z + 28);
+        this.dirLight.target.position.set(focalPos.x, focalPos.y, focalPos.z);
+        this.dirLight.target.updateMatrixWorld();
+      }
+    }
+
     if (this.track) this.track.update(delta);
     if (this.decorations) this.decorations.update(delta, this.camera);
     if (this.particles) this.particles.update(delta, this.camera);
@@ -2173,23 +2204,16 @@ export class Game {
       itemSlot.addEventListener('click', triggerItem);
     }
 
-    // Gyro Toggle Button
-    const btnGyro = document.getElementById('btn-toggle-gyro');
-    if (btnGyro) {
-      btnGyro.addEventListener('click', () => {
-        this.gyroEnabled = !this.gyroEnabled;
-        if (this.gyroEnabled) {
-          btnGyro.textContent = '📱 เอียงเครื่อง: เปิด';
-          btnGyro.classList.remove('off');
-          this.hud?.showReaction('📱 เปิดพวงมาลัยเอียงเครื่อง!', 1200);
-        } else {
-          btnGyro.textContent = '📱 เอียงเครื่อง: ปิด';
-          btnGyro.classList.add('off');
-          this.gyroSteer = 0;
-          this.gyroRoll = 0;
-          this.hud?.showReaction('📱 ปิดพวงมาลัยเอียงเครื่อง', 1200);
-        }
-      });
+    // Landscape orientation recommendation prompt dismiss
+    const btnDismissLandscape = document.getElementById('btn-dismiss-landscape');
+    if (btnDismissLandscape) {
+      const dismissPrompt = (e) => {
+        if (e) e.preventDefault();
+        const promptEl = document.getElementById('landscape-prompt');
+        if (promptEl) promptEl.classList.add('hidden');
+      };
+      btnDismissLandscape.addEventListener('click', dismissPrompt);
+      btnDismissLandscape.addEventListener('touchstart', dismissPrompt, { passive: false });
     }
 
     // Device Orientation (Gyroscope / Tilt Steering for mobile & tablet)
