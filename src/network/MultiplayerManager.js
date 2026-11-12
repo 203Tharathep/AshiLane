@@ -173,6 +173,10 @@ export class MultiplayerManager {
       if (this.onStartRaceCallback) {
         this.onStartRaceCallback(data);
       }
+    } else if (data.type === 'START_COUNTDOWN') {
+      if (this.onStartCountdown) {
+        this.onStartCountdown(data);
+      }
     } else if (data.type === 'CAR_TRANSFORM') {
       if (this.onRacerTransform) {
         this.onRacerTransform(data);
@@ -346,6 +350,10 @@ export class MultiplayerManager {
       if (this.onStartRaceCallback) {
         this.onStartRaceCallback(data);
       }
+    } else if (data.type === 'START_COUNTDOWN') {
+      if (this.onStartCountdown) {
+        this.onStartCountdown(data);
+      }
     } else if (data.type === 'CAR_TRANSFORM') {
       if (this.onRacerTransform) {
         this.onRacerTransform(data);
@@ -408,6 +416,15 @@ export class MultiplayerManager {
       if (this.onStartRaceCallback) {
         this.onStartRaceCallback(packet);
       }
+    }
+  }
+
+  sendStartCountdown() {
+    const packet = { type: 'START_COUNTDOWN', timestamp: Date.now() };
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(packet));
+    } else if (this.isHost) {
+      this.broadcast(packet);
     }
   }
 

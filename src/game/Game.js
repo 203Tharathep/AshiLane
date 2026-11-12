@@ -88,6 +88,7 @@ export class Game {
     );
     this.multiplayer.onStartRaceCallback = (packet) => this.onMultiplayerStartRace(packet);
     this.multiplayer.onRacerTransform = (data) => this.onRemoteRacerTransform(data);
+    this.multiplayer.onStartCountdown = (data) => this.onMultiplayerStartCountdown(data);
 
     // UI
     this.ui = new UIManager(this);
@@ -725,9 +726,23 @@ export class Game {
     }
   }
 
+  onMultiplayerStartCountdown() {
+    if (this.state === 'GRID_INTRO') {
+      this.finishGridIntro();
+    }
+    if (!this.countdownActive && !this.isRacing) {
+      this.startCountdown();
+    }
+  }
+
   startCountdown() {
     this.countdownActive = true;
     this.isRacing = false;
+
+    // In multiplayer, host synchronizes countdown launch across all players
+    if (this.gameMode === 'multiplayer' && this.multiplayer && this.multiplayer.isHost) {
+      this.multiplayer.sendStartCountdown();
+    }
 
     if (this.playerCar) {
       this.playerCar.speed = 0;

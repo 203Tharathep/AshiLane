@@ -179,6 +179,13 @@ wss.on('connection', (ws) => {
         }
       }
 
+      // 4.5 SYNCHRONIZED COUNTDOWN START
+      else if (data.type === 'START_COUNTDOWN') {
+        if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
+        const room = rooms.get(currentRoomCode);
+        broadcastToRoom(room, message, ws);
+      }
+
       // 5. CAR TRANSFORM (High speed ~25-30Hz relay)
       else if (data.type === 'CAR_TRANSFORM') {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
