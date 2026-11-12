@@ -1,3 +1,47 @@
+
+/* Lobby Exit Button in Header */
+.lobby-header {
+  position: relative;
+}
+.btn-leave-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+  cursor: pointer;
+  z-index: 10;
+}
+.btn-leave-top:hover {
+  background: #f87171;
+  transform: translateY(-1px);
+}
+
+/* Starting Grid "click for skip" bottom right hint */
+.grid-intro-skip-corner {
+  position: absolute;
+  bottom: 14px;
+  right: 18px;
+  z-index: 40;
+  pointer-events: none;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 10px rgba(0, 243, 255, 0.6), 0 2px 6px rgba(0, 0, 0, 0.9);
+  animation: subtleBlink 2s infinite ease-in-out;
+}
+@keyframes subtleBlink {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
 :root {
   --primary: #00f3ff;
   --secondary: #ff0077;
@@ -3265,44 +3309,72 @@ body, html {
     min-width: 180px !important;
   }
 
-  /* 3. Garage: Dock console to left and open 3D car view (Fixes Image 3) */
+  /* 3. Garage: Slim Left Console & Elevated Bottom-Right Controls (Fixes Image 1) */
   #view-garage {
-    padding: 4px 10px !important;
+    padding: 2px 8px !important;
   }
   .garage-topbar {
-    padding: 2px 10px !important;
+    padding: 2px 8px !important;
     margin-bottom: 2px !important;
   }
   .garage-title-wrap h2 {
-    font-size: 1.0rem !important;
+    font-size: 0.95rem !important;
     gap: 4px !important;
   }
   .garage-sub {
     display: none !important;
   }
   #btn-garage-back {
-    padding: 4px 10px !important;
-    font-size: 0.76rem !important;
+    padding: 3px 8px !important;
+    font-size: 0.72rem !important;
   }
   .garage-workspace {
     flex-direction: row !important;
-    height: calc(100vh - 42px) !important;
+    height: calc(100vh - 38px) !important;
   }
   .garage-console {
-    width: 250px !important;
-    max-width: 36vw !important;
+    width: 195px !important;
+    max-width: 28vw !important;
     height: 100% !important;
     max-height: none !important;
-    border-radius: 12px !important;
-    background: rgba(10, 14, 26, 0.84) !important;
+    border-radius: 10px !important;
+    background: rgba(10, 14, 26, 0.88) !important;
   }
   .garage-tabs-header {
-    padding: 3px !important;
+    padding: 2px !important;
     gap: 2px !important;
   }
   .garage-tab-btn {
-    padding: 6px 2px !important;
-    font-size: 0.7rem !important;
+    padding: 4px 1px !important;
+    font-size: 0.64rem !important;
+  }
+  .car-info-title h3 {
+    font-size: 0.82rem !important;
+  }
+  .car-info-title .badge {
+    font-size: 0.58rem !important;
+    padding: 1px 4px !important;
+  }
+  .car-desc-text {
+    font-size: 0.62rem !important;
+    line-height: 1.25 !important;
+    margin-bottom: 4px !important;
+  }
+  .stat-row {
+    margin-bottom: 2px !important;
+  }
+  .stat-label-wrap {
+    font-size: 0.64rem !important;
+  }
+  .stat-bar-track {
+    height: 4px !important;
+  }
+  .addon-cat-header {
+    font-size: 0.68rem !important;
+  }
+  .addon-pill {
+    font-size: 0.62rem !important;
+    padding: 3px 5px !important;
   }
   .garage-viewport-overlay {
     flex: 1 !important;
@@ -3311,13 +3383,17 @@ body, html {
   }
   .garage-turntable-controls {
     position: absolute !important;
-    bottom: 6px !important;
-    right: 6px !important;
-    padding: 3px 6px !important;
+    bottom: 24px !important; /* Elevated above bottom home-bar indicator so whole buttons are visible */
+    right: 10px !important;
+    padding: 4px 8px !important;
     gap: 4px !important;
-    transform: scale(0.8) !important;
+    transform: scale(0.85) !important;
     transform-origin: bottom right !important;
-    max-width: 60vw !important;
+    background: rgba(11, 15, 28, 0.92) !important;
+    border: 1px solid rgba(0, 243, 255, 0.45) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8) !important;
+    max-width: 68vw !important;
   }
   .garage-turntable-controls .tt-btn {
     padding: 4px 8px !important;
@@ -3325,6 +3401,104 @@ body, html {
   }
   .garage-drag-hint {
     display: none !important;
+  }
+
+  /* 4. Starting Grid Intro: Mini Showcase Card & Discrete Skip Corner (Fixes Image 3) */
+  .grid-broadcast-wrap {
+    left: 10px !important;
+    bottom: 10px !important;
+  }
+  .grid-broadcast-card {
+    width: 140px !important;
+    border-width: 1.5px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8), 0 0 14px rgba(0, 243, 255, 0.25) !important;
+  }
+  .grid-broadcast-photo-box {
+    height: 90px !important;
+  }
+  .grid-broadcast-pos-badge {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 0.72rem !important;
+    border-radius: 6px !important;
+  }
+  .gb-team-pill, .gb-role-pill, .gb-car-tag-pill {
+    display: none !important;
+  }
+  .grid-broadcast-info-bar {
+    padding: 3px 6px !important;
+  }
+  .grid-broadcast-driver-name {
+    font-size: 0.7rem !important;
+    margin-bottom: 1px !important;
+  }
+  .grid-broadcast-car-desc {
+    font-size: 0.6rem !important;
+  }
+  .grid-intro-skip-pill {
+    transform: scale(0.8) !important;
+    transform-origin: top right !important;
+  }
+
+  /* 5. Lobby: Compact All-In-One Screen Layout (Fixes Image 2) */
+  #view-lobby {
+    padding: 6px 12px !important;
+  }
+  .lobby-card {
+    padding: 8px 16px !important;
+    gap: 6px !important;
+    max-height: 96vh !important;
+    overflow-y: auto !important;
+  }
+  .room-code-tag {
+    font-size: 0.65rem !important;
+  }
+  .room-code-big {
+    font-size: 1.25rem !important;
+    letter-spacing: 2px !important;
+  }
+  .code-btn-row .btn {
+    padding: 4px 10px !important;
+    font-size: 0.72rem !important;
+  }
+  .lobby-players-section h3 {
+    font-size: 0.8rem !important;
+    margin-bottom: 2px !important;
+  }
+  .players-grid {
+    gap: 6px !important;
+  }
+  .lobby-player-card {
+    padding: 6px 10px !important;
+  }
+  .lobby-player-card .p-avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .lobby-player-card .p-name {
+    font-size: 0.82rem !important;
+  }
+  .lobby-settings-box {
+    padding: 4px 10px !important;
+    gap: 6px !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .setting-item label {
+    font-size: 0.68rem !important;
+    margin-bottom: 2px !important;
+  }
+  .setting-item select {
+    padding: 3px 6px !important;
+    font-size: 0.72rem !important;
+  }
+  .lobby-footer {
+    margin-top: 4px !important;
+    gap: 6px !important;
+  }
+  .lobby-footer .btn {
+    padding: 5px 12px !important;
+    font-size: 0.8rem !important;
   }
 
   /* 4. Podium / Victory Leaderboard on landscape mobile */

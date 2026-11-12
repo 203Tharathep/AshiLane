@@ -313,10 +313,12 @@ export class UIManager {
       this.game.multiplayer.updateLocalPlayer({ isReady });
     });
 
-    document.getElementById('btn-leave-lobby')?.addEventListener('click', () => {
+    const handleLeaveLobby = () => {
       this.game.multiplayer.disconnect();
       this.showView('menu');
-    });
+    };
+    document.getElementById('btn-leave-lobby')?.addEventListener('click', handleLeaveLobby);
+    document.getElementById('btn-leave-lobby-top')?.addEventListener('click', handleLeaveLobby);
 
     // Victory Screen buttons
     document.getElementById('btn-victory-restart')?.addEventListener('click', () => {

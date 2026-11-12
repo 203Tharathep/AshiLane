@@ -10,8 +10,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap"
     rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-Cc_VPlFf.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-stKnBWhR.css">
+  <script type="module" crossorigin src="/assets/index-DROm7Of6.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Stq-xMZg.css">
 </head>
 
 <body>
@@ -103,7 +103,6 @@
           <button id="btn-touch-item" class="t-btn t-item" aria-label="ใช้ไอเทม" title="ใช้ไอเทม [Q / F]">
             <span id="btn-touch-item-icon">ITEM</span>
           </button>
-          <button id="btn-touch-drift" class="t-btn t-drift" aria-label="ดริฟต์">DRIFT</button>
           <button id="btn-touch-boost" class="t-btn t-boost" aria-label="ไนโตร">NITRO</button>
         </div>
         <div class="touch-row-bottom">
@@ -143,9 +142,9 @@
       </div>
       <div id="grid-intro-stage-title" class="grid-intro-stage-title">🏖️ หาดทรายสายดริฟต์</div>
       <button id="btn-skip-grid-intro" class="grid-intro-skip-pill" type="button"
-        title="ข้ามการเปิดตัว (Space / Enter / คลิก)">
+        title="ข้ามการเปิดตัว (คลิกเพื่อเริ่มแข่ง)">
         <span>ข้ามการเปิดตัว</span>
-        <span class="skip-key">SPACE ⏩</span>
+        <span class="skip-key">SKIP ⏩</span>
       </button>
     </div>
 
@@ -180,9 +179,8 @@
       </div>
     </div>
 
-    <div class="grid-intro-footer">
-      <span class="grid-intro-hint">⚡ กล้องกำลังแพลนชมรถรอบสนาม — กด <kbd>SPACE</kbd>
-        หรือคลิกหน้าจอเพื่อเริ่มแข่งทันที</span>
+    <div class="grid-intro-skip-corner">
+      <span>click for skip ⏩</span>
     </div>
   </div>
 
@@ -519,6 +517,7 @@
   <div id="view-lobby" class="ui-view hidden">
     <div class="lobby-card">
       <div class="lobby-header">
+        <button id="btn-leave-lobby-top" class="btn btn-sm btn-danger btn-leave-top" title="ออกจากห้อง">◀ ออกจากห้อง</button>
         <div class="room-code-tag">รหัสห้อง (ROOM CODE)</div>
         <div id="lobby-room-code" class="room-code-big">ASHI-0000</div>
         <div class="code-btn-row">
