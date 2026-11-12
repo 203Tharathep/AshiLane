@@ -110,10 +110,11 @@ export class UIManager {
       this.showJoinRoomPrompt();
     });
 
-    document.getElementById('btn-toggle-bgm')?.addEventListener('click', () => {
+    document.getElementById('btn-toggle-bgm')?.addEventListener('click', (e) => {
+      e?.stopPropagation?.();
       const isPlaying = this.game.audio.toggleBgm();
       const btn = document.getElementById('btn-toggle-bgm');
-      if (btn) btn.textContent = isPlaying ? '🎵 เพลง: เปิด' : '🔇 เพลง: ปิด';
+      if (btn) btn.textContent = isPlaying ? '🎵 เพลง: เปิด (คลิกเพื่อปิด)' : '🔇 เพลง: ปิด (คลิกเพื่อเปิด)';
     });
 
     // Stage Select controls
@@ -343,6 +344,10 @@ export class UIManager {
     this.viewGridIntro?.addEventListener('click', () => {
       this.skipGridIntro();
     });
+    this.viewGridIntro?.addEventListener('touchstart', (e) => {
+      e?.preventDefault?.();
+      this.skipGridIntro();
+    }, { passive: false });
 
     // Victory Screen click to skip animation
     this.viewVictory?.addEventListener('click', (e) => {

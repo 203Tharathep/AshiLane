@@ -59,6 +59,14 @@ body, html {
   width: 100%;
   height: 100%;
   z-index: 1;
+  overflow: hidden;
+}
+
+#canvas-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
 }
 
 /* UI Overlay Views */
@@ -68,12 +76,15 @@ body, html {
   left: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
   background: radial-gradient(circle at center, rgba(10, 12, 24, 0.6) 0%, rgba(5, 6, 12, 0.9) 100%);
   transition: opacity 0.3s ease, visibility 0.3s ease;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .hidden {
@@ -2599,6 +2610,7 @@ body, html {
   gap: 14px;
   align-items: flex-end;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .touch-actions {
@@ -2607,6 +2619,7 @@ body, html {
   gap: 10px;
   align-items: flex-end;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 
 .touch-row-top,
@@ -2615,13 +2628,17 @@ body, html {
   gap: 12px;
   align-items: center;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .t-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 50% !important;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
   background: rgba(15, 23, 42, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -2647,6 +2664,10 @@ body, html {
 .t-steer {
   width: 68px;
   height: 68px;
+  min-width: 68px;
+  min-height: 68px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 1.5rem;
   border-color: rgba(0, 243, 255, 0.5);
   color: #00f3ff;
@@ -2657,6 +2678,10 @@ body, html {
 .t-gas {
   width: 76px;
   height: 76px;
+  min-width: 76px;
+  min-height: 76px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 1.05rem;
   background: rgba(0, 255, 136, 0.35);
   border-color: #00ff88;
@@ -2667,6 +2692,10 @@ body, html {
 .t-brake {
   width: 60px;
   height: 60px;
+  min-width: 60px;
+  min-height: 60px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 0.76rem;
   background: rgba(255, 0, 85, 0.35);
   border-color: #ff0055;
@@ -2677,6 +2706,10 @@ body, html {
 .t-drift {
   width: 60px;
   height: 60px;
+  min-width: 60px;
+  min-height: 60px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 0.75rem;
   background: rgba(255, 215, 0, 0.32);
   border-color: #ffd700;
@@ -2687,6 +2720,10 @@ body, html {
 .t-boost {
   width: 60px;
   height: 60px;
+  min-width: 60px;
+  min-height: 60px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 0.75rem;
   background: rgba(0, 243, 255, 0.32);
   border-color: #00f3ff;
@@ -2697,6 +2734,10 @@ body, html {
 .t-item {
   width: 58px;
   height: 58px;
+  min-width: 58px;
+  min-height: 58px;
+  aspect-ratio: 1 / 1 !important;
+  flex-shrink: 0 !important;
   font-size: 0.72rem;
   background: rgba(168, 85, 247, 0.32);
   border-color: #a855f7;
@@ -3140,8 +3181,9 @@ body, html {
   }
   .menu-card {
     padding: 10px 18px !important;
-    max-width: 600px !important;
-    width: 94% !important;
+    max-width: 460px !important;
+    width: 88% !important;
+    margin: auto !important;
     border-radius: 14px !important;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.85) !important;
   }
@@ -3544,6 +3586,81 @@ body, html {
   .victory-actions .btn {
     padding: 6px 12px !important;
     font-size: 0.8rem !important;
+  }
+
+  /* Touch controls & HUD on mobile landscape */
+  #touch-controls {
+    bottom: 8px !important;
+    padding: 0 16px !important;
+  }
+  .touch-actions {
+    gap: 6px !important;
+  }
+  .touch-row-top,
+  .touch-row-bottom {
+    gap: 8px !important;
+  }
+  .t-steer {
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+    aspect-ratio: 1 / 1 !important;
+    flex-shrink: 0 !important;
+    font-size: 1.25rem !important;
+  }
+  .t-gas {
+    width: 62px !important;
+    height: 62px !important;
+    min-width: 62px !important;
+    min-height: 62px !important;
+    aspect-ratio: 1 / 1 !important;
+    flex-shrink: 0 !important;
+    font-size: 0.88rem !important;
+  }
+  .t-brake {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    min-height: 48px !important;
+    aspect-ratio: 1 / 1 !important;
+    flex-shrink: 0 !important;
+    font-size: 0.68rem !important;
+  }
+  .t-boost, .t-item {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    min-height: 48px !important;
+    aspect-ratio: 1 / 1 !important;
+    flex-shrink: 0 !important;
+    font-size: 0.68rem !important;
+  }
+  .hud-bottom-right {
+    bottom: 8px !important;
+    transform: translateX(-50%) scale(0.8) !important;
+  }
+  .hud-top-left {
+    transform: scale(0.78) !important;
+    transform-origin: top left !important;
+    top: 6px !important;
+    left: 8px !important;
+  }
+  .hud-top-right {
+    transform: scale(0.78) !important;
+    transform-origin: top right !important;
+    top: 6px !important;
+    right: 8px !important;
+  }
+  .hud-top-right #minimap-canvas {
+    width: 100px !important;
+    height: 100px !important;
+    aspect-ratio: 1 / 1 !important;
+    flex-shrink: 0 !important;
+  }
+  .item-slot {
+    top: 6px !important;
+    transform: translateX(-50%) scale(0.85) !important;
   }
 }
 

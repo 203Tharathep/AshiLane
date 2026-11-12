@@ -3,6 +3,7 @@ export class AudioManager {
     this.ctx = null;
     this.isMuted = false;
     this.bgmPlaying = false;
+    this.bgmEnabled = true; // Auto-play audio & BGM by default
     this.engineGain = null;
     this.engineOsc = null;
     this.engineSub = null;
@@ -64,6 +65,11 @@ export class AudioManager {
         window.speechSynthesis.speak(u);
         this.speechPrimed = true;
       } catch (e) {}
+    }
+
+    // Auto-start BGM if enabled
+    if (this.bgmEnabled && !this.bgmPlaying) {
+      this.startBgm();
     }
   }
 
@@ -487,8 +493,13 @@ export class AudioManager {
   }
 
   startBgm() {
+    this.bgmEnabled = true;
     if (!this.ensureActive() || this.bgmPlaying) return;
     this.bgmPlaying = true;
+    if (typeof document !== 'undefined') {
+      const btn = document.getElementById('btn-toggle-bgm');
+      if (btn) btn.textContent = '🎵 เพลง: เปิด (คลิกเพื่อปิด)';
+    }
 
     const bassline = [110, 110, 130.81, 146.83, 110, 110, 164.81, 146.83];
     let step = 0;
@@ -520,10 +531,15 @@ export class AudioManager {
   }
 
   stopBgm() {
+    this.bgmEnabled = false;
     this.bgmPlaying = false;
     if (this.bgmInterval) {
       clearInterval(this.bgmInterval);
       this.bgmInterval = null;
+    }
+    if (typeof document !== 'undefined') {
+      const btn = document.getElementById('btn-toggle-bgm');
+      if (btn) btn.textContent = '🎵 เพลง: ปิด (คลิกเพื่อเปิด)';
     }
   }
 

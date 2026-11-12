@@ -277,7 +277,10 @@ export class Game {
     this.currentDifficulty = difficulty;
     this.currentLaps = laps;
     this.state = 'RACING';
-    this.audio.init();
+    this.audio.unlockMobileAudio();
+    if (this.audio.bgmEnabled && !this.audio.bgmPlaying) {
+      this.audio.startBgm();
+    }
 
     // Reset race finish tracking & 10s countdown states
     this.finishOrder = [];
@@ -775,7 +778,10 @@ export class Game {
   onMultiplayerStartRace(packet) {
     this.gameMode = 'multiplayer';
     this.state = 'RACING';
-    this.audio.init();
+    this.audio.unlockMobileAudio();
+    if (this.audio.bgmEnabled && !this.audio.bgmPlaying) {
+      this.audio.startBgm();
+    }
 
     // Ensure garage showcase items are closed and world visuals restored
     if (this.garageCarMesh) {
@@ -1601,6 +1607,20 @@ export class Game {
   animate() {
     requestAnimationFrame(() => this.animate());
 
+    // Continuous dynamic aspect ratio check: guarantees 3D car & track NEVER stretch on mobile
+    if (this.camera && this.renderer && this.container) {
+      const w = this.container.clientWidth || window.innerWidth;
+      const h = this.container.clientHeight || window.innerHeight;
+      if (w > 0 && h > 0) {
+        const currentAspect = w / h;
+        if (Math.abs(this.camera.aspect - currentAspect) > 0.005) {
+          this.camera.aspect = currentAspect;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(w, h, false);
+        }
+      }
+    }
+
     const delta = Math.min(this.clock.getDelta(), 0.08);
 
     if (this.state === 'GARAGE') {
@@ -2138,9 +2158,12 @@ export class Game {
     this.gyroRoll = 0;
     this.cameraRoll = 0;
 
-    // Mobile / Desktop Web Audio unlock on user gestures
+    // Mobile / Desktop Web Audio unlock on user gestures: automatically start audio & BGM
     const unlockAudio = () => {
       this.audio.unlockMobileAudio();
+      if (this.audio.bgmEnabled && !this.audio.bgmPlaying) {
+        this.audio.startBgm();
+      }
     };
     window.addEventListener('touchstart', unlockAudio, { passive: true });
     window.addEventListener('touchend', unlockAudio, { passive: true });
@@ -2308,14 +2331,19 @@ export class Game {
     };
     setupDeviceOrientation();
 
-    // Orientation change listener for mobile / tablet
-    window.addEventListener('orientationchange', () => {
-      setTimeout(() => this.onWindowResize(), 120);
-    });
+    // Orientation change & visualViewport listeners for mobile / tablet
+    const handleScreenChange = () => {
+      this.onWindowResize();
+      setTimeout(() => this.onWindowResize(), 100);
+      setTimeout(() => this.onWindowResize(), 350);
+      setTimeout(() => this.onWindowResize(), 650);
+    };
+    window.addEventListener('orientationchange', handleScreenChange);
     if (window.screen && window.screen.orientation) {
-      window.screen.orientation.addEventListener('change', () => {
-        setTimeout(() => this.onWindowResize(), 120);
-      });
+      window.screen.orientation.addEventListener('change', handleScreenChange);
+    }
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleScreenChange);
     }
 
     // --- Garage 360° Interactive Orbit Drag & Zoom Handlers ---
@@ -2419,12 +2447,13 @@ export class Game {
 
   onWindowResize() {
     if (!this.camera || !this.renderer) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = this.container ? this.container.clientWidth : window.innerWidth;
+    const h = this.container ? this.container.clientHeight : window.innerHeight;
+    if (w <= 0 || h <= 0) return;
     this.camera.aspect = w / h;
     this.camera.fov = (w < h) ? 75 : 65;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
+    this.renderer.setSize(w, h, false);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   }
 }
