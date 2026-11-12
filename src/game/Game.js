@@ -99,6 +99,14 @@ export class Game {
     // Init Three Scene & Start loop
     this.initThree();
     this.animate();
+
+    // Auto-start audio & BGM immediately on load
+    try {
+      this.audio.unlockMobileAudio();
+      if (this.audio.bgmEnabled && !this.audio.bgmPlaying) {
+        this.audio.startBgm();
+      }
+    } catch (e) {}
   }
 
   initThree() {
@@ -2168,6 +2176,7 @@ export class Game {
     window.addEventListener('touchstart', unlockAudio, { passive: true });
     window.addEventListener('touchend', unlockAudio, { passive: true });
     window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('mousedown', unlockAudio, { passive: true });
     window.addEventListener('click', unlockAudio, { passive: true });
     window.addEventListener('keydown', unlockAudio, { passive: true });
 

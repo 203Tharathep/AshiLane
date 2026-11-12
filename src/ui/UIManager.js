@@ -110,12 +110,14 @@ export class UIManager {
       this.showJoinRoomPrompt();
     });
 
-    document.getElementById('btn-toggle-bgm')?.addEventListener('click', (e) => {
-      e?.stopPropagation?.();
-      const isPlaying = this.game.audio.toggleBgm();
-      const btn = document.getElementById('btn-toggle-bgm');
-      if (btn) btn.textContent = isPlaying ? '🎵 เพลง: เปิด (คลิกเพื่อปิด)' : '🔇 เพลง: ปิด (คลิกเพื่อเปิด)';
-    });
+    // Global UI Click Audio & Auto-Unlock on any interactive element
+    document.addEventListener('pointerdown', (e) => {
+      const targetBtn = e.target.closest('button, .btn, .stage-card, .garage-skin-item, .garage-tab-btn, .addon-pill, .diff-pill, .laps-pill, .nav-arrow, .tt-btn');
+      if (targetBtn) {
+        this.game?.audio?.unlockMobileAudio?.();
+        this.game?.audio?.playClick?.();
+      }
+    }, { passive: true });
 
     // Stage Select controls
     document.getElementById('btn-stage-back')?.addEventListener('click', () => {
