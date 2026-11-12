@@ -178,7 +178,7 @@ export class UIManager {
           this.currentAddons[category] = val;
           try {
             localStorage.setItem('ashilane_addons', JSON.stringify(this.currentAddons));
-          } catch (e) {}
+          } catch (e) { }
 
           row.querySelectorAll('.addon-pill').forEach(p => p.classList.remove('active'));
           pill.classList.add('active');
@@ -211,7 +211,7 @@ export class UIManager {
       colorInput.value = this.currentColor;
       colorInput.addEventListener('input', (e) => {
         this.currentColor = e.target.value;
-        try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) {}
+        try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) { }
         if (colorHex) colorHex.textContent = this.currentColor.toUpperCase();
         this.game.updateGarageColor(this.currentColor);
       });
@@ -223,7 +223,7 @@ export class UIManager {
         const color = e.target.dataset.color;
         if (color) {
           this.currentColor = color;
-          try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) {}
+          try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) { }
           if (colorInput) colorInput.value = color;
           if (colorHex) colorHex.textContent = color.toUpperCase();
           this.game.updateGarageColor(color);
@@ -389,7 +389,7 @@ export class UIManager {
 
     try {
       this.game?.audio?.playClick?.();
-    } catch (e) {}
+    } catch (e) { }
 
     // Animate active modal card out smoothly
     const activeCard = document.querySelector('#view-stage-select .stage-select-card, #view-lobby .lobby-card');
@@ -626,13 +626,13 @@ export class UIManager {
 
       card.addEventListener('click', () => {
         this.currentSkinId = skin.id;
-        try { localStorage.setItem('ashilane_skin', this.currentSkinId); } catch (err) {}
+        try { localStorage.setItem('ashilane_skin', this.currentSkinId); } catch (err) { }
         document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
 
         if (skin.color) {
           this.currentColor = skin.color;
-          try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) {}
+          try { localStorage.setItem('ashilane_color', this.currentColor); } catch (err) { }
           const colorInput = document.getElementById('garage-color-input');
           if (colorInput) colorInput.value = this.currentColor;
           const colorHex = document.getElementById('garage-color-hex');
@@ -657,7 +657,7 @@ export class UIManager {
   }
 
   onGarageCarChanged() {
-    try { localStorage.setItem('ashilane_car_index', this.currentCarIndex); } catch (err) {}
+    try { localStorage.setItem('ashilane_car_index', this.currentCarIndex); } catch (err) { }
     const car = CARS[this.currentCarIndex];
     document.getElementById('garage-car-name').textContent = car.nameTh;
     document.getElementById('garage-car-tag').textContent = car.tag;
@@ -797,7 +797,7 @@ export class UIManager {
           colors: ['#ffd700', '#ffaa00', '#ffffff', '#00f0ff']
         }), 960);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   showVictoryScreen(results) {
