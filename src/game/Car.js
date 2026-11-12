@@ -496,8 +496,13 @@ export class Car {
         }
       } else {
         this.lap += 1;
-        if (this.isPlayer && this.game && this.game.hud) {
-          this.game.hud.showNotification(`รอบที่ ${this.lap} / ${maxLaps}!`);
+        if (this.isPlayer && this.game) {
+          if (this.game.hud) {
+            this.game.hud.showNotification(this.lap === maxLaps && maxLaps > 1 ? `🔥 รอบสุดท้าย! (${this.lap} / ${maxLaps})` : `รอบที่ ${this.lap} / ${maxLaps}!`);
+          }
+          if (this.lap === maxLaps && maxLaps > 1 && this.game.audio && this.game.audio.playFinalLapAnnounce) {
+            this.game.audio.playFinalLapAnnounce();
+          }
         }
       }
     }

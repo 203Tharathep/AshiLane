@@ -13,17 +13,24 @@ export class AudioManager {
     this.speechVoices = [];
     this.bgmAudio = null;
     this.bgmAudioPlaying = false;
+    this.bgmBaseVolume = 0.34;
+    this.voiceBuffers = {};
+    this.voiceLoading = false;
+    this.activeVoiceSource = null;
+    this.activeVoiceAudio = null;
+    this.customSpeechTimer = null;
+    this.bgmDuckTimer = null;
 
-    // Preload HTML5 Audio track for iOS silent mode bypass & rich music
+    // Preload new energetic synthwave racing BGM (cache-busted, zero fallback to old teaser track)
     if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
       try {
-        this.bgmAudio = new Audio('/assets/audio/bgm.wav');
+        this.bgmAudio = new Audio('/assets/audio/bgm.wav?v=20261113');
         this.bgmAudio.loop = true;
-        this.bgmAudio.volume = 0.35;
+        this.bgmAudio.volume = this.bgmBaseVolume;
         this.bgmAudio.addEventListener('error', () => {
-          // Fallback to teaser_soundtrack if bgm.wav fails
-          if (this.bgmAudio) {
-            this.bgmAudio.src = '/assets/audio/teaser_soundtrack.wav';
+          this.bgmAudio = null;
+          if (this.bgmEnabled && !this.bgmPlaying) {
+            this.startSynthBgm();
           }
         });
       } catch (e) {}
@@ -54,6 +61,7 @@ export class AudioManager {
       this.ctx = new AudioContext();
       this.setupEngineSynth();
       this.setupScreechSynth();
+      this.preloadVoiceClips();
     } catch (e) {
       console.warn('AudioContext init error:', e);
     }
@@ -117,6 +125,7 @@ export class AudioManager {
     if (this.bgmEnabled && !this.bgmPlaying) {
       this.startBgm();
     }
+    this.preloadVoiceClips();
   }
 
   playClick() {
@@ -242,20 +251,50 @@ export class AudioManager {
     }
   }
 
-  playCountdown(pitch = 440, duration = 0.15) {
+  playCountdown(pitch = 440, duration = 0.22, step = null) {
     if (!this.ensureActive()) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(pitch, this.ctx.currentTime);
+    const now = this.ctx.currentTime;
+    const isGo = step === 'GO' || pitch >= 800;
 
-    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+    try {
+      // Aggressive motorsport starting-light power chord synth
+      const freqs = isGo ? [pitch, pitch * 1.498, pitch * 0.5] : [pitch, pitch * 0.5];
+      freqs.forEach((f, idx) => {
+        const osc = this.ctx.createOscillator();
+        const filter = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+        osc.type = idx === freqs.length - 1 ? 'triangle' : 'sawtooth';
+        osc.frequency.setValueAtTime(f, now);
+        if (isGo) {
+          osc.frequency.exponentialRampToValueAtTime(f * 1.06, now + duration);
+        }
 
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    osc.start();
-    osc.stop(this.ctx.currentTime + duration);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(isGo ? 3200 : 1800, now);
+
+        const peakVol = isGo ? (idx === 0 ? 0.24 : 0.16) : (idx === 0 ? 0.20 : 0.15);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(peakVol, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + duration + 0.02);
+      });
+    } catch (e) {}
+
+    // Fierce countdown voiceover ("สาม!" / "สอง!" / "หนึ่ง!" / "ไปเลย! ซิ่งให้ยับ!")
+    if (step === 'GO' || pitch >= 800) {
+      this.playVoiceClip('cd_go');
+    } else if (step === 3 || step === '3') {
+      this.playVoiceClip('cd_3');
+    } else if (step === 2 || step === '2') {
+      this.playVoiceClip('cd_2');
+    } else if (step === 1 || step === '1') {
+      this.playVoiceClip('cd_1');
+    }
   }
 
   playCountdownTick(seconds = 5) {
@@ -586,35 +625,63 @@ export class AudioManager {
 
     if (this.bgmInterval) clearInterval(this.bgmInterval);
 
-    const bassline = [110, 110, 130.81, 146.83, 110, 110, 164.81, 146.83];
+    // 132 BPM E-minor arcade synthwave groove (bass + arpeggio + tight kick)
+    const bassNotes = [82.41, 82.41, 164.81, 164.81, 65.41, 65.41, 130.81, 130.81, 73.42, 73.42, 146.83, 146.83, 61.74, 61.74, 123.47, 146.83];
+    const arpNotes = [329.63, 392.00, 493.88, 392.00, 261.63, 329.63, 392.00, 329.63, 293.66, 369.99, 440.00, 369.99, 246.94, 293.66, 369.99, 493.88];
     let step = 0;
 
     this.bgmInterval = setInterval(() => {
       if (!this.bgmPlaying || this.isMuted || !this.ctx) return;
-      const freq = bassline[step % bassline.length];
-      step++;
+      const now = this.ctx.currentTime;
+      const idx = step % bassNotes.length;
 
       try {
+        // Driving Bass pulse
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-
-        gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
-
         const filter = this.ctx.createBiquadFilter();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(bassNotes[idx], now);
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(700, this.ctx.currentTime);
-
+        filter.frequency.setValueAtTime(idx % 4 === 2 ? 1200 : 780, now);
+        gain.gain.setValueAtTime(0.09, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.13);
 
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.18);
+        // Sparkling arcade arpeggio
+        const arp = this.ctx.createOscillator();
+        const aGain = this.ctx.createGain();
+        arp.type = 'triangle';
+        arp.frequency.setValueAtTime(arpNotes[idx], now);
+        aGain.gain.setValueAtTime(0.045, now);
+        aGain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
+        arp.connect(aGain);
+        aGain.connect(this.ctx.destination);
+        arp.start(now);
+        arp.stop(now + 0.11);
+
+        // Kick thump every 2 steps
+        if (idx % 2 === 0) {
+          const kOsc = this.ctx.createOscillator();
+          const kGain = this.ctx.createGain();
+          kOsc.type = 'sine';
+          kOsc.frequency.setValueAtTime(130, now);
+          kOsc.frequency.exponentialRampToValueAtTime(42, now + 0.09);
+          kGain.gain.setValueAtTime(0.18, now);
+          kGain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+          kOsc.connect(kGain);
+          kGain.connect(this.ctx.destination);
+          kOsc.start(now);
+          kOsc.stop(now + 0.12);
+        }
       } catch (e) {}
-    }, 160);
+
+      step++;
+    }, 114);
   }
 
   stopBgm() {
@@ -653,87 +720,220 @@ export class AudioManager {
     return this.isMuted;
   }
 
-  announceRacer(name, isPlayer = false, pos = 1) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
+  preloadVoiceClips() {
+    if (this.voiceLoading || !this.ctx || typeof fetch === 'undefined') return;
+    this.voiceLoading = true;
+    const keys = [
+      'rival_classic', 'rival_shrek', 'rival_ceo', 'rival_rally',
+      'rival_bikini', 'rival_valkyrie', 'player_pole', 'pole_prefix',
+      'cd_3', 'cd_2', 'cd_1', 'cd_go', 'final_lap', 'victory'
+    ];
+    keys.forEach(key => {
+      fetch(`/assets/audio/voice/${key}.wav?v=20261113`)
+        .then(res => res.ok ? res.arrayBuffer() : null)
+        .then(buf => {
+          if (!buf || !this.ctx) return null;
+          return this.ctx.decodeAudioData(buf);
+        })
+        .then(decoded => {
+          if (decoded) this.voiceBuffers[key] = decoded;
+        })
+        .catch(() => {});
+    });
+  }
 
+  duckBgm(durMs = 1800) {
+    if (!this.bgmAudio) return;
+    if (this.bgmDuckTimer) clearTimeout(this.bgmDuckTimer);
+    this.bgmAudio.volume = 0.16;
+    this.bgmDuckTimer = setTimeout(() => {
+      if (this.bgmAudio) this.bgmAudio.volume = this.bgmBaseVolume;
+      this.bgmDuckTimer = null;
+    }, durMs);
+  }
+
+  stopActiveVoiceClip() {
+    if (this.customSpeechTimer) {
+      clearTimeout(this.customSpeechTimer);
+      this.customSpeechTimer = null;
+    }
+    if (this.activeVoiceSource) {
+      try { this.activeVoiceSource.stop(); } catch (e) {}
+      this.activeVoiceSource = null;
+    }
+    if (this.activeVoiceAudio) {
+      try {
+        this.activeVoiceAudio.pause();
+        this.activeVoiceAudio.currentTime = 0;
+      } catch (e) {}
+      this.activeVoiceAudio = null;
+    }
+  }
+
+  playVoiceClip(key) {
+    if (this.isMuted || !key) return false;
+    this.stopActiveVoiceClip();
+
+    const buffer = this.voiceBuffers[key];
+    if (buffer && this.ensureActive()) {
+      try {
+        const now = this.ctx.currentTime;
+        const src = this.ctx.createBufferSource();
+        src.buffer = buffer;
+
+        const chestFilter = this.ctx.createBiquadFilter();
+        chestFilter.type = 'lowshelf';
+        chestFilter.frequency.setValueAtTime(200, now);
+        chestFilter.gain.setValueAtTime(3.5, now);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(1.08, now);
+
+        src.connect(chestFilter);
+        chestFilter.connect(gain);
+        gain.connect(this.ctx.destination);
+        src.start(now);
+        this.activeVoiceSource = src;
+        src.onended = () => {
+          if (this.activeVoiceSource === src) this.activeVoiceSource = null;
+        };
+        this.duckBgm(Math.max(900, Math.round(buffer.duration * 1000)));
+        return true;
+      } catch (e) {}
+    }
+
+    // Fallback: direct HTML5 Audio stream (also decodes cleanly on mobile Safari)
+    if (typeof Audio !== 'undefined') {
+      try {
+        const audio = new Audio(`/assets/audio/voice/${key}.wav?v=20261113`);
+        audio.volume = 0.96;
+        this.activeVoiceAudio = audio;
+        audio.play().catch(() => {});
+        this.duckBgm(2100);
+        return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+
+  speakFierceTTS(text) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || this.isMuted) return;
     try {
       window.speechSynthesis.cancel();
-
       const allVoices = (this.speechVoices && this.speechVoices.length > 0)
         ? this.speechVoices
         : window.speechSynthesis.getVoices();
 
-      // Priority 1: Thai male authoritative voice (like Niwat)
-      const thaiMaleVoice = allVoices.find(v => {
-        const lang = (v.lang || '').toLowerCase();
-        const vname = (v.name || '').toLowerCase();
-        return (lang.startsWith('th') || vname.includes('thai') || vname.includes('ไทย')) &&
-               (vname.includes('niwat') || vname.includes('male') || vname.includes('ชาย'));
-      });
-
-      // Priority 2: Any Thai voice (Premwadee, Google ภาษาไทย, etc.)
-      const thaiVoice = thaiMaleVoice || allVoices.find(v => {
+      // Priority 1: Fierce deep Thai male voices (Pattara, Niwat, Sarawut, etc.)
+      const isThai = (v) => {
         const lang = (v.lang || '').toLowerCase();
         const vname = (v.name || '').toLowerCase();
         return lang.startsWith('th') || vname.includes('thai') || vname.includes('ไทย');
-      });
-
-      // ดึงและทำความสะอาดชื่อนักแข่ง ตัดวงเล็บภาษาอังกฤษส่วนเกินและอิโมจิออก เพื่อให้อ่านออกเสียงได้อย่างเข้ม ดุดัน และชัดเจน
-      let cleanName = (name || '')
-        .replace(/\s*\([^)]*\)/g, '')
-        .replace(/#\d+/g, '')
-        .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/gu, '')
-        .trim();
-
-      if (!cleanName && isPlayer) {
-        cleanName = 'นักซิ่งอาชิ';
-      }
-
-      // หมายเลขภาษาไทยสำหรับเสียงพากย์ (ไม่มี P นำหน้า)
-      const thaiNumberWords = {
-        1: 'หนึ่ง',
-        2: 'สอง',
-        3: 'สาม',
-        4: 'สี่',
-        5: 'ห้า',
-        6: 'หก',
-        7: 'เจ็ด',
-        8: 'แปด'
       };
+      const isFemaleHint = (vname) => vname.includes('premwadee') || vname.includes('achara') || vname.includes('female') || vname.includes('หญิง');
+      const isMaleHint = (vname) => vname.includes('pattara') || vname.includes('niwat') || vname.includes('sarawut') || vname.includes('kittipong') || vname.includes('male') || vname.includes('ชาย');
 
-      // อ่านทั้งหมายเลขและชื่อนักแข่ง (เช่น "7, วัลคิรี อาชิ", "1, นักซิ่งอาชิ")
-      let text = '';
-      if (thaiVoice) {
-        const numWord = thaiNumberWords[pos] || `${pos}`;
-        text = cleanName ? `${numWord}, ${cleanName}` : numWord;
-      } else {
-        text = cleanName ? `${pos}, ${cleanName}` : `${pos}`;
-      }
+      const thaiMaleVoice = allVoices.find(v => isThai(v) && isMaleHint(v.name.toLowerCase()));
+      const thaiNeutralVoice = allVoices.find(v => isThai(v) && !isFemaleHint(v.name.toLowerCase()));
+      const thaiVoice = thaiMaleVoice || thaiNeutralVoice || allVoices.find(isThai);
 
       const utterance = new SpeechSynthesisUtterance(text);
-
       if (thaiVoice) {
         utterance.voice = thaiVoice;
         utterance.lang = 'th-TH';
       } else {
         const enMaleVoice = allVoices.find(v => {
           const vname = (v.name || '').toLowerCase();
-          return v.lang.startsWith('en') && (vname.includes('david') || vname.includes('guy') || vname.includes('male') || vname.includes('natural'));
+          return v.lang.startsWith('en') && (vname.includes('david') || vname.includes('mark') || vname.includes('guy') || vname.includes('male'));
         }) || allVoices.find(v => v.lang.startsWith('en'));
-
         if (enMaleVoice) utterance.voice = enMaleVoice;
         utterance.lang = 'en-US';
       }
 
-      // โทนเสียงเข้มๆ ทุ้มๆ ดุดันระดับต่ำสุด (Web Speech API pitch 0.0 คือขีดจำกัดเสียงต่ำสุด ตอบโจทย์ pitch -3.0)
-      utterance.pitch = 0.0;
-      utterance.rate = 0.92; // จังหวะเข้ม กระชับ หนักแน่น ไม่ยานคาง
+      // Low baritone authority + snappy fierce racing broadcast cadence (avoid falsy 0.0 quirk)
+      utterance.pitch = 0.12;
+      utterance.rate = 1.15;
       utterance.volume = 1.0;
 
+      this.duckBgm(2400);
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn('Speech synthesis notice:', e);
     }
+  }
+
+  announceRacer(name, isPlayer = false, pos = 1) {
+    if (this.isMuted) return;
+    this.stopSpeech();
+
+    const rawName = name || '';
+    let cleanName = rawName
+      .replace(/\s*\([^)]*\)/g, '')
+      .replace(/#\d+/g, '')
+      .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/gu, '')
+      .trim();
+
+    // 1. Check built-in rivals first -> play fierce DSP-processed studio voice clip
+    if (!isPlayer) {
+      const rivalClipMap = [
+        ['วัลคิรี', 'rival_valkyrie'],
+        ['บิกินี่', 'rival_bikini'],
+        ['แรลลี่', 'rival_rally'],
+        ['อสูร', 'rival_rally'],
+        ['เสี่ย', 'rival_ceo'],
+        ['ชเร็ค', 'rival_shrek'],
+        ['คลาสสิก', 'rival_classic']
+      ];
+      const matched = rivalClipMap.find(([kw]) => cleanName.includes(kw));
+      if (matched && this.playVoiceClip(matched[1])) {
+        return;
+      }
+    }
+
+    // 2. Player at pole with default name -> fierce studio full intro
+    if (isPlayer && (!cleanName || cleanName === 'นักซิ่งอาชิ')) {
+      if (this.playVoiceClip('player_pole')) return;
+    }
+
+    // 3. Custom player / multiplayer racers -> fierce studio prefix + aggressive live speech
+    if (!cleanName && isPlayer) {
+      cleanName = 'นักซิ่งอาชิ';
+    }
+    const thaiNumberWords = {
+      1: 'หนึ่ง', 2: 'สอง', 3: 'สาม', 4: 'สี่',
+      5: 'ห้า', 6: 'หก', 7: 'เจ็ด', 8: 'แปด'
+    };
+    const numWord = thaiNumberWords[pos] || `${pos}`;
+
+    if (isPlayer || pos === 1) {
+      if (cleanName && this.playVoiceClip('pole_prefix')) {
+        this.customSpeechTimer = setTimeout(() => {
+          this.speakFierceTTS(`${cleanName}! เหยียบให้มิด!`);
+        }, 1450);
+        return;
+      }
+      this.speakFierceTTS(`อันดับที่หนึ่ง! โพลโพซิชัน! ${cleanName}! เหยียบให้มิด!`);
+      return;
+    }
+
+    const fiercePrefixes = [
+      'ปีศาจทางโค้ง!',
+      'สายซิ่งจอมโหด!',
+      'พร้อมบวกทุกโค้ง!',
+      'คู่ปรับตัวอันตราย!'
+    ];
+    const hype = fiercePrefixes[pos % fiercePrefixes.length];
+    this.speakFierceTTS(`${hype} อันดับที่${numWord}! ${cleanName}!`);
+  }
+
+  playFinalLapAnnounce() {
+    this.playVoiceClip('final_lap');
+  }
+
+  playVictoryAnnounce() {
+    setTimeout(() => {
+      this.playVoiceClip('victory');
+    }, 520);
   }
 
   playAnnouncerImpact(isPlayer = false) {
@@ -741,56 +941,75 @@ export class AudioManager {
     const now = this.ctx.currentTime;
 
     try {
-      // 1. Deep Sub-Bass Thud (75Hz -> 20Hz Sub Drop for ultra deep resonance)
+      // 1. Deep Sub-Bass Drop (88Hz -> 20Hz chest slam)
       const subOsc = this.ctx.createOscillator();
       const subGain = this.ctx.createGain();
       subOsc.type = 'sine';
-      subOsc.frequency.setValueAtTime(isPlayer ? 95 : 75, now);
-      subOsc.frequency.exponentialRampToValueAtTime(20, now + 0.45);
+      subOsc.frequency.setValueAtTime(isPlayer ? 105 : 85, now);
+      subOsc.frequency.exponentialRampToValueAtTime(20, now + 0.52);
 
       subGain.gain.setValueAtTime(0.001, now);
-      subGain.gain.linearRampToValueAtTime(isPlayer ? 0.50 : 0.42, now + 0.02);
-      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.52);
+      subGain.gain.linearRampToValueAtTime(isPlayer ? 0.58 : 0.48, now + 0.018);
+      subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
 
       subOsc.connect(subGain);
       subGain.connect(this.ctx.destination);
       subOsc.start(now);
-      subOsc.stop(now + 0.55);
+      subOsc.stop(now + 0.60);
 
-      // 2. Heavy Stadium Low-Mid Body (Fierce punch)
-      const bodyOsc = this.ctx.createOscillator();
-      const bodyGain = this.ctx.createGain();
-      bodyOsc.type = 'triangle';
-      bodyOsc.frequency.setValueAtTime(isPlayer ? 135 : 105, now);
-      bodyOsc.frequency.exponentialRampToValueAtTime(38, now + 0.30);
+      // 2. Cinema Sawtooth Braam Impact (gritty low-brass bite)
+      const braamOsc = this.ctx.createOscillator();
+      const braamFilter = this.ctx.createBiquadFilter();
+      const braamGain = this.ctx.createGain();
+      braamOsc.type = 'sawtooth';
+      braamOsc.frequency.setValueAtTime(isPlayer ? 65 : 55, now);
+      braamOsc.frequency.exponentialRampToValueAtTime(34, now + 0.45);
 
-      bodyGain.gain.setValueAtTime(0.001, now);
-      bodyGain.gain.linearRampToValueAtTime(0.28, now + 0.015);
-      bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+      braamFilter.type = 'lowpass';
+      braamFilter.Q.setValueAtTime(3.2, now);
+      braamFilter.frequency.setValueAtTime(950, now);
+      braamFilter.frequency.exponentialRampToValueAtTime(160, now + 0.45);
 
-      bodyOsc.connect(bodyGain);
-      bodyGain.connect(this.ctx.destination);
-      bodyOsc.start(now);
-      bodyOsc.stop(now + 0.35);
+      braamGain.gain.setValueAtTime(0.001, now);
+      braamGain.gain.linearRampToValueAtTime(isPlayer ? 0.28 : 0.22, now + 0.02);
+      braamGain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
 
-      // 3. Stadium Radio Comm Squelch/Chirp
-      const chirp = this.ctx.createOscillator();
-      const chirpGain = this.ctx.createGain();
-      chirp.type = 'sine';
-      chirp.frequency.setValueAtTime(1550, now);
-      chirp.frequency.setValueAtTime(2100, now + 0.022);
+      braamOsc.connect(braamFilter);
+      braamFilter.connect(braamGain);
+      braamGain.connect(this.ctx.destination);
+      braamOsc.start(now);
+      braamOsc.stop(now + 0.50);
 
-      chirpGain.gain.setValueAtTime(0.05, now);
-      chirpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
-
-      chirp.connect(chirpGain);
-      chirpGain.connect(this.ctx.destination);
-      chirp.start(now);
-      chirp.stop(now + 0.05);
+      // 3. Sharp Metallic Broadcast Whip Transition Noise
+      const nLen = Math.floor(this.ctx.sampleRate * 0.22);
+      const nBuf = this.ctx.createBuffer(1, nLen, this.ctx.sampleRate);
+      const nData = nBuf.getChannelData(0);
+      for (let i = 0; i < nLen; i++) nData[i] = Math.random() * 2 - 1;
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = nBuf;
+      const nBp = this.ctx.createBiquadFilter();
+      nBp.type = 'bandpass';
+      nBp.Q.setValueAtTime(2.5, now);
+      nBp.frequency.setValueAtTime(420, now);
+      nBp.frequency.exponentialRampToValueAtTime(3200, now + 0.20);
+      const nGain = this.ctx.createGain();
+      nGain.gain.setValueAtTime(0.001, now);
+      nGain.gain.linearRampToValueAtTime(0.16, now + 0.04);
+      nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      noise.connect(nBp);
+      nBp.connect(nGain);
+      nGain.connect(this.ctx.destination);
+      noise.start(now);
+      noise.stop(now + 0.23);
     } catch (e) {}
   }
 
   stopSpeech() {
+    this.stopActiveVoiceClip();
+    if (this.bgmAudio && !this.isMuted) {
+      if (this.bgmDuckTimer) clearTimeout(this.bgmDuckTimer);
+      this.bgmAudio.volume = this.bgmBaseVolume;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();

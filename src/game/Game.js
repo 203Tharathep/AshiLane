@@ -789,16 +789,16 @@ export class Game {
     this.hud.playCountdown(
       (step) => {
         if (step === 3) {
-          this.audio.playCountdown(440, 0.18);
+          this.audio.playCountdown(440, 0.22, '3');
           if (this.track && this.track.setStartLights) this.track.setStartLights(2, false);
         } else if (step === 2) {
-          this.audio.playCountdown(440, 0.18);
+          this.audio.playCountdown(440, 0.22, '2');
           if (this.track && this.track.setStartLights) this.track.setStartLights(4, false);
         } else if (step === 1) {
-          this.audio.playCountdown(440, 0.18);
+          this.audio.playCountdown(440, 0.22, '1');
           if (this.track && this.track.setStartLights) this.track.setStartLights(5, false);
         } else if (step === 'GO') {
-          this.audio.playCountdown(880, 0.45);
+          this.audio.playCountdown(880, 0.48, 'GO');
           if (this.track && this.track.setStartLights) this.track.setStartLights(5, true);
           setTimeout(() => {
             if (this.track && this.track.setStartLights) this.track.setStartLights(0, false);
@@ -2071,6 +2071,7 @@ export class Game {
       if (car.isPlayer) {
         if (this.audio) {
           this.audio.playVictoryChime();
+          if (this.audio.playVictoryAnnounce) this.audio.playVictoryAnnounce();
         }
         this.hud.showNotification('👑 คุณเข้าเส้นชัยอันดับ 1! กำลังปิดการแข่งขันใน 10 วินาที...');
       } else {
