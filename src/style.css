@@ -2668,6 +2668,30 @@ body, html {
   box-shadow: 0 0 14px rgba(0, 243, 255, 0.25);
 }
 
+.t-item {
+  width: 58px;
+  height: 58px;
+  font-size: 0.72rem;
+  background: rgba(168, 85, 247, 0.32);
+  border-color: #a855f7;
+  color: #e9d5ff;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.28);
+}
+
+.t-item.has-item {
+  background: rgba(255, 215, 0, 0.45);
+  border-color: #ffd700;
+  color: #fff;
+  font-size: 1.25rem;
+  box-shadow: 0 0 22px rgba(255, 215, 0, 0.75);
+  animation: itemPulse 0.9s infinite alternate;
+}
+
+@keyframes itemPulse {
+  0% { transform: scale(1); box-shadow: 0 0 14px rgba(255, 215, 0, 0.5); }
+  100% { transform: scale(1.08); box-shadow: 0 0 25px rgba(255, 215, 0, 0.9); }
+}
+
 @media (max-width: 1024px), (hover: none) and (pointer: coarse) {
   #touch-controls {
     display: flex;
@@ -2725,7 +2749,7 @@ body, html {
     height: 52px;
     font-size: 0.72rem;
   }
-  .t-drift, .t-boost {
+  .t-drift, .t-boost, .t-item {
     width: 52px;
     height: 52px;
     font-size: 0.72rem;
@@ -3037,14 +3061,15 @@ body, html {
 }
 
 /* Garage Responsive Styles */
-@media (max-width: 900px) {
+/* Portrait Mobile Layout */
+@media (orientation: portrait) and (max-width: 900px) {
   .garage-workspace {
     flex-direction: column;
     justify-content: flex-end;
   }
   .garage-console {
     width: 100%;
-    max-height: 48vh;
+    max-height: 46vh;
     border-radius: 16px 16px 0 0;
   }
   .garage-viewport-overlay {
@@ -3059,6 +3084,286 @@ body, html {
   }
   .victory-player-dash {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Landscape Mobile & Low-Height Responsive Layout (Fixes Images 1, 2, 3) */
+@media (orientation: landscape) and (max-height: 540px), (max-width: 960px) and (max-height: 540px) {
+  /* 1. Main Menu: Compact 2-column card that fits 100% in one view (Fixes Image 1) */
+  #view-menu {
+    gap: 6px !important;
+    padding: 6px 12px !important;
+    justify-content: center !important;
+  }
+  .menu-brand {
+    margin-bottom: 0 !important;
+  }
+  .title-sub {
+    font-size: 0.62rem !important;
+    letter-spacing: 2px !important;
+    margin-bottom: 0 !important;
+  }
+  .title-main {
+    font-size: 1.75rem !important;
+    letter-spacing: 1px !important;
+    line-height: 1 !important;
+  }
+  .title-tag {
+    font-size: 0.75rem !important;
+    margin-top: 1px !important;
+  }
+  .menu-card {
+    padding: 10px 18px !important;
+    max-width: 600px !important;
+    width: 94% !important;
+    border-radius: 14px !important;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.85) !important;
+  }
+  .player-input-wrap {
+    margin-bottom: 6px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  .player-input-wrap label {
+    font-size: 0.78rem !important;
+    margin-bottom: 0 !important;
+    white-space: nowrap !important;
+    min-width: 120px !important;
+  }
+  .player-input-wrap input {
+    padding: 5px 10px !important;
+    font-size: 0.88rem !important;
+    height: 32px !important;
+  }
+  .menu-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  .menu-actions .btn {
+    padding: 7px 10px !important;
+    font-size: 0.82rem !important;
+    gap: 6px !important;
+    border-radius: 8px !important;
+  }
+  .btn-grid-two {
+    grid-column: span 2 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  #btn-open-garage {
+    grid-column: span 2 !important;
+  }
+  .menu-footer-bar {
+    grid-column: span 2 !important;
+    margin-top: 2px !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+  }
+  .menu-footer-bar .btn-subtle {
+    padding: 4px 10px !important;
+    font-size: 0.72rem !important;
+  }
+  .controls-hint {
+    display: none !important; /* Hide keyboard controls hint on mobile to save space */
+  }
+
+  /* 2. Stage Select: Compact all-in-one view (Fixes Image 2) */
+  #view-stage-select {
+    padding: 6px 12px !important;
+  }
+  .stage-select-card {
+    padding: 8px 14px !important;
+    gap: 6px !important;
+    width: 96% !important;
+    max-width: 920px !important;
+    max-height: 96vh !important;
+    border-radius: 14px !important;
+  }
+  .stage-select-header {
+    padding-bottom: 4px !important;
+  }
+  .stage-select-header h2 {
+    font-size: 1.05rem !important;
+  }
+  #btn-stage-back {
+    padding: 4px 10px !important;
+    font-size: 0.76rem !important;
+  }
+  .stages-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 6px !important;
+  }
+  .stage-card {
+    padding: 5px 6px !important;
+    gap: 2px !important;
+    border-radius: 8px !important;
+  }
+  .stage-card-header {
+    margin-bottom: 1px !important;
+  }
+  .stage-num {
+    font-size: 0.65rem !important;
+  }
+  .stage-stars {
+    font-size: 0.65rem !important;
+  }
+  .stage-card-visual {
+    height: 38px !important;
+    border-radius: 6px !important;
+  }
+  .stage-icon {
+    font-size: 1.4rem !important;
+  }
+  .stage-tag {
+    display: none !important;
+  }
+  .stage-name {
+    font-size: 0.76rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  .stage-name-en, .stage-desc {
+    display: none !important;
+  }
+  .stage-options-box {
+    padding: 4px 10px !important;
+    gap: 8px !important;
+    flex-direction: row !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    border-radius: 8px !important;
+  }
+  .option-row {
+    gap: 6px !important;
+    margin: 0 !important;
+    align-items: center !important;
+  }
+  .option-label {
+    font-size: 0.72rem !important;
+    min-width: auto !important;
+  }
+  .pills-group {
+    gap: 4px !important;
+  }
+  .diff-pill, .laps-pill {
+    padding: 3px 8px !important;
+    font-size: 0.7rem !important;
+    border-radius: 6px !important;
+  }
+  .stage-select-footer {
+    display: flex !important;
+    justify-content: center !important;
+  }
+  #btn-start-selected-race {
+    padding: 6px 20px !important;
+    font-size: 0.88rem !important;
+    width: auto !important;
+    min-width: 180px !important;
+  }
+
+  /* 3. Garage: Dock console to left and open 3D car view (Fixes Image 3) */
+  #view-garage {
+    padding: 4px 10px !important;
+  }
+  .garage-topbar {
+    padding: 2px 10px !important;
+    margin-bottom: 2px !important;
+  }
+  .garage-title-wrap h2 {
+    font-size: 1.0rem !important;
+    gap: 4px !important;
+  }
+  .garage-sub {
+    display: none !important;
+  }
+  #btn-garage-back {
+    padding: 4px 10px !important;
+    font-size: 0.76rem !important;
+  }
+  .garage-workspace {
+    flex-direction: row !important;
+    height: calc(100vh - 42px) !important;
+  }
+  .garage-console {
+    width: 250px !important;
+    max-width: 36vw !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-radius: 12px !important;
+    background: rgba(10, 14, 26, 0.84) !important;
+  }
+  .garage-tabs-header {
+    padding: 3px !important;
+    gap: 2px !important;
+  }
+  .garage-tab-btn {
+    padding: 6px 2px !important;
+    font-size: 0.7rem !important;
+  }
+  .garage-viewport-overlay {
+    flex: 1 !important;
+    position: relative !important;
+    pointer-events: none !important;
+  }
+  .garage-turntable-controls {
+    position: absolute !important;
+    bottom: 6px !important;
+    right: 6px !important;
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    transform: scale(0.8) !important;
+    transform-origin: bottom right !important;
+    max-width: 60vw !important;
+  }
+  .garage-turntable-controls .tt-btn {
+    padding: 4px 8px !important;
+    font-size: 0.68rem !important;
+  }
+  .garage-drag-hint {
+    display: none !important;
+  }
+
+  /* 4. Podium / Victory Leaderboard on landscape mobile */
+  .podium-overlay.victory-board-mode {
+    padding: 10px 14px !important;
+    max-height: 96vh !important;
+    border-radius: 14px !important;
+  }
+  .podium-overlay.victory-board-mode .podium-header {
+    margin-bottom: 6px !important;
+  }
+  .podium-overlay.victory-board-mode .podium-badge {
+    font-size: 0.65rem !important;
+    padding: 2px 8px !important;
+  }
+  .podium-overlay.victory-board-mode .podium-title {
+    font-size: 1.15rem !important;
+    margin: 2px 0 !important;
+  }
+  .podium-overlay.victory-board-mode .podium-subtitle {
+    display: none !important;
+  }
+  .table-toggle-bar {
+    padding: 4px 8px !important;
+  }
+  .table-header-title {
+    font-size: 0.75rem !important;
+  }
+  .podium-table th, .podium-table td {
+    padding: 4px 6px !important;
+    font-size: 0.72rem !important;
+  }
+  .victory-actions {
+    margin-top: 6px !important;
+    gap: 6px !important;
+  }
+  .victory-actions .btn {
+    padding: 6px 12px !important;
+    font-size: 0.8rem !important;
   }
 }
 

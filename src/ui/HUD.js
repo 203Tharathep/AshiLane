@@ -48,19 +48,36 @@ export class HUD {
   }
 
   setItem(itemType) {
-    if (!this.itemSlot || !this.itemIcon) return;
+    const touchItemBtn = document.getElementById('btn-touch-item');
+    const touchItemIcon = document.getElementById('btn-touch-item-icon');
+
     if (!itemType) {
-      this.itemSlot.classList.add('hidden');
+      if (this.itemSlot) this.itemSlot.classList.add('hidden');
+      if (touchItemBtn) {
+        touchItemBtn.classList.remove('has-item');
+      }
+      if (touchItemIcon) {
+        touchItemIcon.textContent = 'ITEM';
+      }
       return;
     }
-    this.itemSlot.classList.remove('hidden');
+
+    if (this.itemSlot) this.itemSlot.classList.remove('hidden');
     const icons = {
       boost: '⚡',
       banana: '🍌',
       missile: '🚀',
       shield: '🛡️'
     };
-    this.itemIcon.textContent = icons[itemType] || '❓';
+    const icon = icons[itemType] || '❓';
+    if (this.itemIcon) this.itemIcon.textContent = icon;
+
+    if (touchItemBtn) {
+      touchItemBtn.classList.add('has-item');
+    }
+    if (touchItemIcon) {
+      touchItemIcon.textContent = icon;
+    }
   }
 
   update(playerCar, rank = 1, totalRacers = 1) {

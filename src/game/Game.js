@@ -1559,8 +1559,9 @@ export class Game {
     this.garagePitch = THREE.MathUtils.damp(this.garagePitch, this.garageTargetPitch, 12, delta);
     this.garageDistance = THREE.MathUtils.damp(this.garageDistance, this.garageTargetDistance, 12, delta);
 
-    // Look target slightly offset to the right so car is framed outside left HUD
-    const cx = 0.3;
+    // Look target offset so car is framed cleanly in the open viewport area
+    const isMobileLandscape = window.innerWidth > window.innerHeight && window.innerHeight < 540;
+    const cx = isMobileLandscape ? 0.65 : 0.3;
     const cy = 0.72;
     const cz = 0;
 
@@ -2191,17 +2192,24 @@ export class Game {
     bindTouch('btn-touch-drift', 'Space');
     bindTouch('btn-touch-boost', 'ShiftLeft');
 
-    // Tap Item Slot to use item
+    // Tap Item Slot or Dedicated Touch Item Button to use item
+    const triggerItem = (e) => {
+      if (e) e.preventDefault();
+      if (this.state === 'RACING' && this.items) {
+        this.items.useItem(this.playerCar);
+      }
+    };
+
     const itemSlot = document.getElementById('hud-item-slot');
     if (itemSlot) {
-      const triggerItem = (e) => {
-        e.preventDefault();
-        if (this.state === 'RACING' && this.items) {
-          this.items.useItem(this.playerCar);
-        }
-      };
       itemSlot.addEventListener('touchstart', triggerItem, { passive: false });
       itemSlot.addEventListener('click', triggerItem);
+    }
+
+    const btnTouchItem = document.getElementById('btn-touch-item');
+    if (btnTouchItem) {
+      btnTouchItem.addEventListener('touchstart', triggerItem, { passive: false });
+      btnTouchItem.addEventListener('click', triggerItem);
     }
 
     // Landscape orientation recommendation prompt dismiss
