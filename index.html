@@ -524,7 +524,7 @@
 
       <!-- Lobby Players Grid -->
       <div class="lobby-players-section">
-        <h3>ผู้เล่นในห้อง (RACERS)</h3>
+        <h3>ผู้เล่นในห้อง (RACERS) <span id="lobby-player-count" style="color:var(--primary); font-size:0.95rem; font-weight:700;">(1/8 คน)</span></h3>
         <div id="lobby-players-grid" class="players-grid"></div>
       </div>
 
@@ -552,8 +552,14 @@
           <label>เติมบอท AI เข้ามาแข่งด้วย:</label>
           <select id="lobby-ai-select">
             <option value="0">ไม่เติมบอท (เฉพาะเพื่อน)</option>
-            <option value="2" selected>+ 2 คัน</option>
+            <option value="auto" selected>เติมบอทอัตโนมัติ (ครบ 8 คัน)</option>
+            <option value="1">+ 1 คัน</option>
+            <option value="2">+ 2 คัน</option>
+            <option value="3">+ 3 คัน</option>
             <option value="4">+ 4 คัน</option>
+            <option value="5">+ 5 คัน</option>
+            <option value="6">+ 6 คัน</option>
+            <option value="7">+ 7 คัน</option>
           </select>
         </div>
       </div>

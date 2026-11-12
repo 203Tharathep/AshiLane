@@ -4,23 +4,40 @@ export class MultiplayerManager {
   constructor(onStateChange, onChatMessage) {
     this.onStateChange = onStateChange;
     this.onChatMessage = onChatMessage;
+    this.ws = null;
     this.peer = null;
     this.isHost = false;
     this.roomCode = null;
-    this.connections = new Map(); // peerId -> DataConnection (host side)
-    this.hostConn = null;          // DataConnection to host (client side)
+    this.maxPlayers = 8;
+    this.connections = new Map(); // PeerJS fallback
+    this.hostConn = null;          // PeerJS fallback
     this.players = new Map();     // peerId -> playerInfo
     this.localPlayerId = null;
+    this.useWebSocket = true;
+
     this.localPlayerInfo = {
       name: 'นักซิ่งอาชิ',
       carId: 'gt',
-      skinId: 'green_dress',
-      color: '#ff2255',
+      skinFileName: 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg',
+      color: '#00f0ff',
+      addons: {},
       isReady: false
     };
 
-    this.sendInterval = null;
-    this.lastSentPacketTime = 0;
+    this.onStartRaceCallback = null;
+    this.onRacerTransform = null;
+  }
+
+  getWebSocketUrl() {
+    if (typeof window === 'undefined') return 'ws://localhost:3000';
+    const loc = window.location;
+    // If playing on GitHub Pages (static), connect to the production Render server
+    if (loc.host.includes('github.io')) {
+      return 'wss://ashilongrace.onrender.com';
+    }
+    const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = loc.host || 'localhost:3000';
+    return `${protocol}//${host}`;
   }
 
   generateRoomCode() {
@@ -35,8 +52,142 @@ export class MultiplayerManager {
   createRoom(playerInfo, onRoomCreated, onError) {
     this.isHost = true;
     this.roomCode = this.generateRoomCode();
-    this.localPlayerInfo = { ...playerInfo, isReady: true };
+    this.localPlayerInfo = { ...this.localPlayerInfo, ...playerInfo, isReady: true, isHost: true };
+    this.localPlayerId = `p_${Math.random().toString(36).substring(2, 9)}`;
 
+    // 1. Try WebSocket Server first (best performance, 100% mobile/NAT compatible)
+    this.connectWebSocket((ws) => {
+      ws.send(JSON.stringify({
+        type: 'CREATE_ROOM',
+        roomCode: this.roomCode,
+        player: {
+          id: this.localPlayerId,
+          ...this.localPlayerInfo
+        }
+      }));
+      if (onRoomCreated) onRoomCreated(this.roomCode);
+    }, (err) => {
+      console.warn('WebSocket createRoom failed, falling back to PeerJS:', err);
+      this.createRoomPeerJS(onRoomCreated, onError);
+    });
+  }
+
+  joinRoom(roomCode, playerInfo, onJoined, onError) {
+    this.isHost = false;
+    this.roomCode = roomCode.toUpperCase().trim();
+    this.localPlayerInfo = { ...this.localPlayerInfo, ...playerInfo, isReady: false, isHost: false };
+    this.localPlayerId = `p_${Math.random().toString(36).substring(2, 9)}`;
+
+    // 1. Try WebSocket Server first
+    this.connectWebSocket((ws) => {
+      ws.send(JSON.stringify({
+        type: 'JOIN_ROOM',
+        roomCode: this.roomCode,
+        player: {
+          id: this.localPlayerId,
+          ...this.localPlayerInfo
+        }
+      }));
+      if (onJoined) onJoined(this.roomCode);
+    }, (err) => {
+      console.warn('WebSocket joinRoom failed, falling back to PeerJS:', err);
+      this.joinRoomPeerJS(this.roomCode, onJoined, onError);
+    });
+  }
+
+  connectWebSocket(onReady, onError) {
+    try {
+      const url = this.getWebSocketUrl();
+      const ws = new WebSocket(url);
+      let isConnected = false;
+
+      const timeout = setTimeout(() => {
+        if (!isConnected) {
+          try { ws.close(); } catch (e) {}
+          if (onError) onError(new Error('WebSocket connection timeout'));
+        }
+      }, 4000);
+
+      ws.onopen = () => {
+        isConnected = true;
+        clearTimeout(timeout);
+        this.ws = ws;
+        this.useWebSocket = true;
+        if (onReady) onReady(ws);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.handleServerMessage(data);
+        } catch (e) {
+          console.error('WS Parse Error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        this.ws = null;
+      };
+
+      ws.onerror = (err) => {
+        if (!isConnected) {
+          clearTimeout(timeout);
+          if (onError) onError(err);
+        }
+      };
+    } catch (e) {
+      if (onError) onError(e);
+    }
+  }
+
+  handleServerMessage(data) {
+    if (data.type === 'ROOM_CREATED') {
+      this.roomCode = data.roomCode;
+      this.localPlayerId = data.playerId;
+      this.isHost = true;
+    } else if (data.type === 'WELCOME') {
+      this.roomCode = data.roomCode;
+      this.isHost = data.isHost;
+      if (data.localPlayerId) this.localPlayerId = data.localPlayerId;
+      this.maxPlayers = data.maxPlayers || 8;
+      this.players.clear();
+      data.players.forEach(p => this.players.set(p.id, p));
+      this.notifyState();
+    } else if (data.type === 'PLAYER_JOINED') {
+      this.players.set(data.player.id, data.player);
+      this.notifyState();
+    } else if (data.type === 'PLAYER_UPDATED') {
+      this.players.set(data.peerId, data.player);
+      this.notifyState();
+    } else if (data.type === 'PLAYER_LEFT') {
+      this.players.delete(data.peerId);
+      this.notifyState();
+    } else if (data.type === 'HOST_CHANGED') {
+      if (data.newHostId === this.localPlayerId) {
+        this.isHost = true;
+        const self = this.players.get(this.localPlayerId);
+        if (self) self.isHost = true;
+      }
+      this.notifyState();
+    } else if (data.type === 'START_RACE') {
+      if (this.onStartRaceCallback) {
+        this.onStartRaceCallback(data);
+      }
+    } else if (data.type === 'CAR_TRANSFORM') {
+      if (this.onRacerTransform) {
+        this.onRacerTransform(data);
+      }
+    } else if (data.type === 'CHAT') {
+      if (this.onChatMessage) this.onChatMessage(data);
+    } else if (data.type === 'ERROR') {
+      alert(data.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
+      this.disconnect();
+    }
+  }
+
+  // --- PeerJS Fallback Implementation ---
+  createRoomPeerJS(onRoomCreated, onError) {
+    this.useWebSocket = false;
     const peerId = `ashilane-${this.roomCode.toLowerCase()}`;
     this.initPeer(peerId, () => {
       this.localPlayerId = this.peer.id;
@@ -45,7 +196,6 @@ export class MultiplayerManager {
         ...this.localPlayerInfo,
         isHost: true
       });
-
       if (onRoomCreated) onRoomCreated(this.roomCode);
       this.notifyState();
     }, onError);
@@ -55,24 +205,23 @@ export class MultiplayerManager {
     });
   }
 
-  joinRoom(roomCode, playerInfo, onJoined, onError) {
-    this.isHost = false;
-    this.roomCode = roomCode.toUpperCase().trim();
-    this.localPlayerInfo = { ...playerInfo, isReady: false };
-
+  joinRoomPeerJS(roomCode, onJoined, onError) {
+    this.useWebSocket = false;
     this.initPeer(null, () => {
       this.localPlayerId = this.peer.id;
-      const hostPeerId = `ashilane-${this.roomCode.toLowerCase()}`;
+      const hostPeerId = `ashilane-${roomCode.toLowerCase()}`;
       const conn = this.peer.connect(hostPeerId, { reliable: true });
 
       conn.on('open', () => {
         this.hostConn = conn;
-        // Send join packet
         conn.send({
           type: 'JOIN',
-          player: this.localPlayerInfo
+          player: {
+            id: this.localPlayerId,
+            ...this.localPlayerInfo
+          }
         });
-        if (onJoined) onJoined(this.roomCode);
+        if (onJoined) onJoined(roomCode);
       });
 
       conn.on('data', (data) => {
@@ -92,11 +241,9 @@ export class MultiplayerManager {
   initPeer(peerId, onSuccess, onError) {
     try {
       this.peer = peerId ? new Peer(peerId) : new Peer();
-
       this.peer.on('open', () => {
         if (onSuccess) onSuccess();
       });
-
       this.peer.on('error', (err) => {
         console.error('PeerJS error:', err);
         if (onError) onError(err);
@@ -107,6 +254,12 @@ export class MultiplayerManager {
   }
 
   handleIncomingConnection(conn) {
+    if (this.players.size >= this.maxPlayers) {
+      conn.send({ type: 'ERROR', message: `ห้องเต็มแล้ว (สูงสุด ${this.maxPlayers} คน)` });
+      setTimeout(() => conn.close(), 500);
+      return;
+    }
+
     conn.on('open', () => {
       this.connections.set(conn.peer, conn);
     });
@@ -128,25 +281,26 @@ export class MultiplayerManager {
 
   handleHostReceivedData(senderPeerId, data) {
     if (data.type === 'JOIN') {
-      this.players.set(senderPeerId, {
+      const newPlayer = {
         id: senderPeerId,
         ...data.player,
         isHost: false
-      });
+      };
+      this.players.set(senderPeerId, newPlayer);
 
-      // Send full lobby state to the new client
       const conn = this.connections.get(senderPeerId);
       if (conn) {
         conn.send({
           type: 'WELCOME',
-          players: Array.from(this.players.values())
+          players: Array.from(this.players.values()),
+          isHost: false,
+          maxPlayers: this.maxPlayers
         });
       }
 
-      // Broadcast new player to everyone else
       this.broadcast({
         type: 'PLAYER_JOINED',
-        player: this.players.get(senderPeerId)
+        player: newPlayer
       }, senderPeerId);
 
       this.notifyState();
@@ -162,8 +316,12 @@ export class MultiplayerManager {
         this.notifyState();
       }
     } else if (data.type === 'CAR_TRANSFORM') {
-      // Relay racer transform to other peers
+      // 1. Relay to all other peer clients
       this.broadcast(data, senderPeerId);
+      // 2. CRITICAL FIX: Host MUST also process remote racer transform for its own game!
+      if (this.onRacerTransform) {
+        this.onRacerTransform(data);
+      }
     } else if (data.type === 'CHAT') {
       this.broadcast(data);
       if (this.onChatMessage) this.onChatMessage(data);
@@ -213,7 +371,12 @@ export class MultiplayerManager {
 
   updateLocalPlayer(info) {
     this.localPlayerInfo = { ...this.localPlayerInfo, ...info };
-    if (this.isHost) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'UPDATE_PLAYER',
+        player: this.localPlayerInfo
+      }));
+    } else if (this.isHost) {
       const p = this.players.get(this.localPlayerId);
       if (p) Object.assign(p, this.localPlayerInfo);
       this.broadcast({
@@ -234,12 +397,17 @@ export class MultiplayerManager {
     if (!this.isHost) return;
     const packet = {
       type: 'START_RACE',
-      startTime: Date.now() + 3500, // 3.5s countdown
+      startTime: Date.now() + 3000,
       settings
     };
-    this.broadcast(packet);
-    if (this.onStartRaceCallback) {
-      this.onStartRaceCallback(packet);
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(packet));
+    } else {
+      this.broadcast(packet);
+      if (this.onStartRaceCallback) {
+        this.onStartRaceCallback(packet);
+      }
     }
   }
 
@@ -249,7 +417,10 @@ export class MultiplayerManager {
       peerId: this.localPlayerId,
       ...transformData
     };
-    if (this.isHost) {
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(packet));
+    } else if (this.isHost) {
       this.broadcast(packet);
     } else {
       this.sendToHost(packet);
@@ -265,7 +436,10 @@ export class MultiplayerManager {
       emote,
       timestamp: Date.now()
     };
-    if (this.isHost) {
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(packet));
+    } else if (this.isHost) {
       this.broadcast(packet);
       if (this.onChatMessage) this.onChatMessage(packet);
     } else {
@@ -279,14 +453,24 @@ export class MultiplayerManager {
         roomCode: this.roomCode,
         isHost: this.isHost,
         localPlayerId: this.localPlayerId,
+        maxPlayers: this.maxPlayers,
         players: Array.from(this.players.values())
       });
     }
   }
 
   disconnect() {
+    if (this.ws) {
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'LEAVE_ROOM' }));
+        }
+        this.ws.close();
+      } catch (e) {}
+      this.ws = null;
+    }
     if (this.peer) {
-      this.peer.destroy();
+      try { this.peer.destroy(); } catch (e) {}
       this.peer = null;
     }
     this.connections.clear();
@@ -294,4 +478,3 @@ export class MultiplayerManager {
     this.hostConn = null;
   }
 }
-

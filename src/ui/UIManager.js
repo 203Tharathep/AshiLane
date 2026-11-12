@@ -300,7 +300,8 @@ export class UIManager {
 
     document.getElementById('btn-start-race')?.addEventListener('click', () => {
       const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3');
-      const aiCount = parseInt(document.getElementById('lobby-ai-select')?.value || '2');
+      const aiVal = document.getElementById('lobby-ai-select')?.value || 'auto';
+      const aiCount = (aiVal === 'auto') ? 'auto' : parseInt(aiVal);
       const trackId = document.getElementById('lobby-stage-select')?.value || 'beach';
       this.triggerRaceStartTransition(() => {
         this.game.multiplayer.startRace({ laps, aiCount, trackId });
@@ -749,6 +750,11 @@ export class UIManager {
     const container = document.getElementById('lobby-players-grid');
     if (!container) return;
     container.innerHTML = '';
+
+    const countEl = document.getElementById('lobby-player-count');
+    if (countEl) {
+      countEl.textContent = `(${players.length}/8 คน)`;
+    }
 
     players.forEach(p => {
       const card = document.createElement('div');

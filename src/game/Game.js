@@ -258,6 +258,11 @@ export class Game {
 
     car.position.set(pos.x, 0.05, pos.z);
     car.rotationY = Math.atan2(tangent.x, tangent.z);
+    if (car.model) {
+      car.model.position.copy(car.position);
+      car.model.rotation.set(0, car.rotationY, 0);
+    }
+    car.updateVisuals(0.016);
     car.speed = 0;
     car.velocity.set(0, 0, 0);
     car.lap = 1;
@@ -680,7 +685,12 @@ export class Game {
     if (this.playerCar) this.playerCar.updateVisuals(delta);
     this.aiCars.forEach(ai => ai.updateVisuals(delta));
     this.remotePlayers.forEach(r => {
-      if (r.car) r.car.updateVisuals(delta);
+      if (r.car) {
+        r.car.updateVisuals(delta);
+        if (r.nametag) {
+          r.nametag.position.set(r.car.position.x, r.car.position.y + 1.6, r.car.position.z);
+        }
+      }
     });
   }
 
@@ -766,6 +776,38 @@ export class Game {
     );
   }
 
+  createFloatingNametag(name, isHost = false) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    // Rounded neon badge
+    ctx.fillStyle = 'rgba(6, 12, 28, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(8, 8, 240, 48, 24);
+    ctx.fill();
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isHost ? '#ffd700' : '#00f0ff';
+    ctx.stroke();
+
+    // Name text
+    ctx.fillStyle = isHost ? '#ffd700' : '#ffffff';
+    ctx.font = 'bold 22px "Kanit", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = (isHost ? '👑 ' : '') + name;
+    ctx.fillText(label, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2.4, 0.6, 1);
+    return sprite;
+  }
+
   clearOpponents() {
     this.aiCars.forEach(ai => {
       if (ai.model) this.scene.remove(ai.model);
@@ -774,6 +816,13 @@ export class Game {
 
     this.remotePlayers.forEach(p => {
       if (p.car && p.car.model) this.scene.remove(p.car.model);
+      if (p.nametag) {
+        this.scene.remove(p.nametag);
+        if (p.nametag.material) {
+          if (p.nametag.material.map) p.nametag.material.map.dispose();
+          p.nametag.material.dispose();
+        }
+      }
     });
     this.remotePlayers.clear();
   }
@@ -815,7 +864,7 @@ export class Game {
     const settings = packet.settings || {};
     const trackId = settings.trackId || 'beach';
     const laps = settings.laps || 3;
-    const aiCount = settings.aiCount || 0;
+    let aiCount = settings.aiCount !== undefined ? settings.aiCount : 0;
 
     if (!this.track || this.track.def.id !== trackId) {
       this.loadTrack(trackId);
@@ -841,7 +890,16 @@ export class Game {
     const myIndex = playersList.findIndex(p => p.id === this.multiplayer.localPlayerId);
     this.positionCarAtStart(this.playerCar, myIndex >= 0 ? myIndex : 0);
 
-    // Remote Players
+    // If 'auto' fill requested, fill up to 8 racers total
+    if (aiCount === 'auto') {
+      aiCount = Math.max(0, 8 - playersList.length);
+    } else {
+      aiCount = parseInt(aiCount) || 0;
+    }
+    // Cap total racers to 8
+    aiCount = Math.min(aiCount, Math.max(0, 8 - playersList.length));
+
+    // Spawn & setup remote player cars
     playersList.forEach((p, idx) => {
       if (p.id !== this.multiplayer.localPlayerId) {
         const remoteCarDef = CARS.find(c => c.id === p.carId) || CARS[0];
@@ -854,9 +912,21 @@ export class Game {
         this.scene.add(remoteCar.model);
         this.positionCarAtStart(remoteCar, idx);
 
+        if (remoteCar.model) {
+          remoteCar.model.position.copy(remoteCar.position);
+          remoteCar.model.rotation.set(0, remoteCar.rotationY, 0);
+        }
+        remoteCar.updateVisuals(0.016);
+
+        // 3D Floating Nametag
+        const nametag = this.createFloatingNametag(p.name, !!p.isHost);
+        nametag.position.set(remoteCar.position.x, remoteCar.position.y + 1.6, remoteCar.position.z);
+        this.scene.add(nametag);
+
         this.remotePlayers.set(p.id, {
           car: remoteCar,
           name: p.name,
+          nametag,
           skinFileName: remoteSkin,
           targetPos: remoteCar.position.clone(),
           targetRotY: remoteCar.rotationY
@@ -864,10 +934,12 @@ export class Game {
       }
     });
 
-    // Fill with AI if requested by host
+    // Fill with AI if requested (up to 8 total racers)
     if (aiCount > 0) {
       const startGridIdx = playersList.length;
       for (let i = 0; i < aiCount; i++) {
+        const gridSlot = startGridIdx + i;
+        if (gridSlot >= 8) break;
         const aiCarDef = CARS[i % CARS.length];
         const aiSkin = SKINS[i % SKINS.length].file;
         const ai = new AICar(aiCarDef, aiSkin, '#ff5500', `บอทอาชิ #${i + 1}`, (i % 2 === 0 ? -2.5 : 2.5), 0.88);
@@ -876,7 +948,7 @@ export class Game {
         const built = this.carBuilder.createCar(aiCarDef.id, aiSkin, '#ff5500', true);
         ai.setModel(built);
         this.scene.add(ai.model);
-        this.positionCarAtStart(ai, startGridIdx + i);
+        this.positionCarAtStart(ai, gridSlot);
         this.aiCars.push(ai);
       }
     }
@@ -916,8 +988,56 @@ export class Game {
   }
 
   onRemoteRacerTransform(data) {
-    const remote = this.remotePlayers.get(data.peerId);
+    let remote = this.remotePlayers.get(data.peerId);
+    if (!remote) {
+      // Lazy-spawn remote car if packet arrived before registration
+      const p = this.multiplayer.players.get(data.peerId);
+      if (p) {
+        const remoteCarDef = CARS.find(c => c.id === p.carId) || CARS[0];
+        const remoteSkin = p.skinFileName || 'Gemini_Generated_Image_4g9dic4g9dic4g9d.jpg';
+        const remoteCar = new Car(remoteCarDef, remoteSkin, p.color, false);
+        remoteCar.game = this;
+        remoteCar.totalLaps = this.currentLaps || 3;
+        const built = this.carBuilder.createCar(remoteCarDef.id, remoteSkin, p.color, true);
+        remoteCar.setModel(built);
+        this.scene.add(remoteCar.model);
+        remoteCar.position.set(data.x, data.y, data.z);
+        remoteCar.rotationY = data.rotY;
+        if (remoteCar.model) {
+          remoteCar.model.position.copy(remoteCar.position);
+          remoteCar.model.rotation.set(0, remoteCar.rotationY, 0);
+        }
+        remoteCar.updateVisuals(0.016);
+
+        const nametag = this.createFloatingNametag(p.name, !!p.isHost);
+        nametag.position.set(data.x, data.y + 1.6, data.z);
+        this.scene.add(nametag);
+
+        remote = {
+          car: remoteCar,
+          name: p.name,
+          nametag,
+          skinFileName: remoteSkin,
+          targetPos: new THREE.Vector3(data.x, data.y, data.z),
+          targetRotY: data.rotY
+        };
+        this.remotePlayers.set(data.peerId, remote);
+      } else {
+        return;
+      }
+    }
+
     if (!remote || !remote.car) return;
+
+    // Instant snap if teleported or initial position jump > 15 meters
+    if (remote.car.position.distanceTo(new THREE.Vector3(data.x, data.y, data.z)) > 15) {
+      remote.car.position.set(data.x, data.y, data.z);
+      remote.car.rotationY = data.rotY;
+      if (remote.car.model) {
+        remote.car.model.position.copy(remote.car.position);
+        remote.car.model.rotation.set(0, remote.car.rotationY, 0);
+      }
+    }
 
     remote.targetPos.set(data.x, data.y, data.z);
     remote.targetRotY = data.rotY;
@@ -1769,11 +1889,37 @@ export class Game {
     // 3. Resolve Car-to-Car Collisions (รถชนกันความเร็วตกฮวบ)
     this.resolveCarCollisions(delta);
 
-    // 3. Update Remote Multiplayer Cars (Interpolation)
+    // 3. Update Remote Multiplayer Cars (Interpolation & Visuals)
     this.remotePlayers.forEach(remote => {
-      remote.car.position.lerp(remote.targetPos, delta * 15);
-      remote.car.rotationY = THREE.MathUtils.lerp(remote.car.rotationY, remote.targetRotY, delta * 15);
+      if (!remote.car) return;
+
+      // Instant snap if distance is large (teleport / first packet)
+      if (remote.car.position.distanceTo(remote.targetPos) > 15) {
+        remote.car.position.copy(remote.targetPos);
+        remote.car.rotationY = remote.targetRotY;
+      } else {
+        remote.car.position.lerp(remote.targetPos, Math.min(1, delta * 18));
+      }
+
+      // Shortest angular difference prevents 360-spin flipping glitch
+      let rotDiff = remote.targetRotY - remote.car.rotationY;
+      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      remote.car.rotationY += rotDiff * Math.min(1, delta * 18);
+
       remote.car.updateVisuals(delta);
+
+      if (remote.nametag) {
+        remote.nametag.position.set(remote.car.position.x, remote.car.position.y + 1.6, remote.car.position.z);
+      }
+
+      // Remote car drifting smoke & boost fire
+      if (remote.car.isDrifting && remote.car.speed > 5 && this.particles) {
+        this.particles.emitTireSmoke(remote.car.position);
+      }
+      if (remote.car.boostTimer > 0 && remote.car.exhaustPipes && this.particles) {
+        this.particles.emitExhaustFlame(remote.car.exhaustPipes, true);
+      }
     });
 
     // 4. Update Item System (Boxes, Bananas, Missiles)
