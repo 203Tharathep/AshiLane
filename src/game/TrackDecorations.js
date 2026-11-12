@@ -24,7 +24,7 @@ export const STAGE_ATMOSPHERE = {
     rimIntensity: 0.58,
     rimDir: [-55, 18, -36],
     fogColor: 0xd99b78,
-    fogDensity: 0.0021,
+    fogDensity: 0.0017,
     exposure: 1.12,
     skyTop: '#163973',
     skyMid: '#dc7862',
@@ -273,7 +273,8 @@ export class TrackDecorations {
   // ------------------------------------------------------------------
   buildGround() {
     const bounds = this.track.getBounds();
-    const radius = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) * 0.5 + 115;
+    const spanRadius = Math.hypot((bounds.maxX - bounds.minX) * 0.5, (bounds.maxZ - bounds.minZ) * 0.5);
+    const radius = spanRadius + (this.atmo.hasOcean ? 42 : 95);
 
     // Color map
     const canvas = document.createElement('canvas');
@@ -293,18 +294,26 @@ export class TrackDecorations {
 
     const detail = this.theme.groundDetail || '#1b2238';
     if (this.theme.skyline === 'city') {
-      // Urban paddock blocks & crisp circuit grid lines
-      ctx.strokeStyle = detail;
+      // Urban paddock blocks, emerald circuit turf pockets & neon light grid
+      ctx.fillStyle = '#12182b';
+      ctx.fillRect(0, 0, 512, 512);
+      for (let x = 0; x < 512; x += 64) {
+        for (let y = 0; y < 512; y += 64) {
+          const checker = ((x + y) / 64) % 2 === 0;
+          ctx.fillStyle = checker ? '#182238' : '#132830';
+          ctx.fillRect(x + 3, y + 3, 58, 58);
+          if (((x + y) / 64) % 3 === 0) {
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.22)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 7, y + 7, 50, 50);
+          }
+        }
+      }
+      ctx.strokeStyle = '#25314d';
       ctx.lineWidth = 2;
       for (let i = 0; i <= 512; i += 64) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(0, 243, 255, 0.08)';
-      for (let x = 0; x < 512; x += 64) {
-        for (let y = 0; y < 512; y += 64) {
-          if (((x + y) / 64) % 3 === 0) ctx.fillRect(x + 6, y + 6, 52, 52);
-        }
       }
       bctx.strokeStyle = '#b0b0b0';
       bctx.lineWidth = 2;
@@ -427,14 +436,16 @@ export class TrackDecorations {
         new THREE.MeshStandardMaterial({
           map: waveTex,
           bumpMap: waveTex,
-          bumpScale: 0.4,
-          color: 0x1aa3c8,
-          roughness: 0.16,
-          metalness: 0.45
+          bumpScale: 0.45,
+          color: 0x16add4,
+          emissive: 0x05283a,
+          emissiveIntensity: 0.55,
+          roughness: 0.14,
+          metalness: 0.55
         })
       );
       ocean.rotation.x = -Math.PI / 2;
-      ocean.position.set(bounds.cx, -0.68, bounds.cz);
+      ocean.position.set(bounds.cx, -0.35, bounds.cz);
       ocean.receiveShadow = true;
       this.waterRing = ocean;
       this.group.add(ocean);
@@ -452,11 +463,12 @@ export class TrackDecorations {
       }
     } else {
       const farIsEmissive = this.theme.skyline === 'volcano';
+      const farColor = this.theme.skyline === 'city' ? 0x0d1224 : (this.theme.farGround ?? 0x05060c);
       const far = new THREE.Mesh(
         new THREE.RingGeometry(Math.max(10, radius - 5), 1020, 64),
         farIsEmissive
           ? new THREE.MeshBasicMaterial({ color: this.theme.farGround ?? 0xcc3300 })
-          : new THREE.MeshStandardMaterial({ color: this.theme.farGround ?? 0x05060c, roughness: 0.55, metalness: 0.25 })
+          : new THREE.MeshStandardMaterial({ color: farColor, roughness: 0.65, metalness: 0.22 })
       );
       far.rotation.x = -Math.PI / 2;
       far.position.set(bounds.cx, -0.45, bounds.cz);
@@ -684,56 +696,74 @@ export class TrackDecorations {
         this.group.add(peak, snow);
       }
     } else if (style === 'volcano') {
-      const spot = this.findClearSpot(bounds, radius * 0.48, 72, [], 0) || { x: bounds.cx + 120, z: bounds.cz };
+      // Place hero Volcano deterministically along the forward sightline ahead of the Start Line
+      const sPos = track.samplePos[0];
+      const sTan = track.sampleTan[0];
+      const sNorm = track.sampleNorm[0];
+      let spot = null;
+      const candidates = [
+        [230, 105], [230, -105], [275, 70], [275, -70], [320, 0]
+      ];
+      for (const [fwd, lat] of candidates) {
+        const vx = sPos.x + sTan.x * fwd + sNorm.x * lat;
+        const vz = sPos.z + sTan.z * fwd + sNorm.z * lat;
+        if (track.distanceToCentreLine(vx, vz, 2) >= 74) {
+          spot = { x: vx, z: vz };
+          break;
+        }
+      }
+      if (!spot) {
+        spot = this.findClearSpot(bounds, radius * 0.65, 74, [], 0) || { x: bounds.cx + 180, z: bounds.cz };
+      }
       const volcanoX = spot.x;
       const volcanoZ = spot.z;
 
-      const coneMat = new THREE.MeshStandardMaterial({ color: 0x241412, roughness: 0.92, flatShading: true });
-      const cone = new THREE.Mesh(this.createCraggyConeGeo(24, 96, 98, 28, 8, 0.22), coneMat);
-      cone.position.set(volcanoX, 49, volcanoZ);
+      const coneMat = new THREE.MeshStandardMaterial({ color: 0x381e1a, roughness: 0.9, flatShading: true });
+      const cone = new THREE.Mesh(this.createCraggyConeGeo(24, 102, 108, 28, 8, 0.22), coneMat);
+      cone.position.set(volcanoX, 54, volcanoZ);
       cone.castShadow = true;
       cone.receiveShadow = true;
       this.group.add(cone);
 
-      // Glowing caldera top lava core + skyward glow column
+      // Glowing caldera top lava core cleanly nested inside crater rim + skyward glow column
       const lavaTop = new THREE.Mesh(
-        new THREE.CircleGeometry(23, 28),
+        new THREE.CircleGeometry(21.2, 28),
         new THREE.MeshBasicMaterial({ color: 0xff5a00 })
       );
       lavaTop.rotation.x = -Math.PI / 2;
-      lavaTop.position.set(volcanoX, 95, volcanoZ);
+      lavaTop.position.set(volcanoX, 101, volcanoZ);
       this.group.add(lavaTop);
       this.lavaTop = lavaTop;
 
       const glowColumn = new THREE.Mesh(
-        new THREE.CylinderGeometry(36, 18, 65, 20, 1, true),
+        new THREE.CylinderGeometry(38, 19, 72, 20, 1, true),
         new THREE.MeshBasicMaterial({
           color: 0xff4500,
           transparent: true,
-          opacity: 0.14,
+          opacity: 0.16,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           side: THREE.DoubleSide
         })
       );
-      glowColumn.position.set(volcanoX, 126, volcanoZ);
+      glowColumn.position.set(volcanoX, 136, volcanoZ);
       this.group.add(glowColumn);
       this.volcanoGlowCol = glowColumn;
 
       // Lava rivers flowing down volcano ridges
-      const riverMat = new THREE.MeshBasicMaterial({ color: 0xff4c00 });
-      for (let r = 0; r < 7; r++) {
-        const ang = (r / 7) * Math.PI * 2 + 0.3;
-        const river = new THREE.Mesh(new THREE.BoxGeometry(3.2, 114, 1.8), riverMat);
-        river.position.set(volcanoX + Math.cos(ang) * 56, 47, volcanoZ + Math.sin(ang) * 56);
-        river.lookAt(volcanoX, 47, volcanoZ);
+      const riverMat = new THREE.MeshBasicMaterial({ color: 0xff5500 });
+      for (let r = 0; r < 8; r++) {
+        const ang = (r / 8) * Math.PI * 2 + 0.2;
+        const river = new THREE.Mesh(new THREE.BoxGeometry(3.6, 124, 2.0), riverMat);
+        river.position.set(volcanoX + Math.cos(ang) * 58, 52, volcanoZ + Math.sin(ang) * 58);
+        river.lookAt(volcanoX, 52, volcanoZ);
         river.rotateX(0.58);
         this.group.add(river);
         this.lavaRivers.push(river);
       }
 
       // Towering jagged obsidian rock spires around caldera & perimeter
-      const rockMat = new THREE.MeshStandardMaterial({ color: 0x1b1111, roughness: 0.85, flatShading: true });
+      const rockMat = new THREE.MeshStandardMaterial({ color: 0x311c1a, roughness: 0.85, flatShading: true });
       for (let i = 0; i < 22; i++) {
         const ang = (i / 22) * Math.PI * 2;
         const dist = radius * (0.72 + (i % 3) * 0.14);
@@ -748,6 +778,40 @@ export class TrackDecorations {
         this.group.add(spire);
       }
     }
+  }
+
+  /** Builds a gracefully arched, V-folded tapered 3D palm frond blade. */
+  createPalmFrondGeo() {
+    const segs = 6;
+    const len = 3.9;
+    const verts = [];
+    const idx = [];
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs;
+      const z = t * len;
+      // Arches gently up then droops gracefully toward tip
+      const y = Math.sin(t * Math.PI * 0.85) * 0.48 - t * t * 0.95;
+      // Leaf width: narrow stalk -> broad mid blade -> pointed tip
+      const w = t < 0.12 ? 0.08 + t * 2.2 : Math.sin(Math.min(1, t) * Math.PI) * 0.52 + 0.04;
+      const wingDrop = w * 0.28;
+      verts.push(
+        -w, y - wingDrop, z,
+        0, y, z,
+        w, y - wingDrop, z
+      );
+      if (s < segs) {
+        const b = s * 3;
+        idx.push(
+          b, b + 1, b + 3, b + 1, b + 4, b + 3,
+          b + 1, b + 2, b + 4, b + 2, b + 5, b + 4
+        );
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    return geo;
   }
 
   // ------------------------------------------------------------------
@@ -774,17 +838,17 @@ export class TrackDecorations {
       if (palmSpots.length) {
         const count = palmSpots.length;
         const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7c5333, roughness: 0.9 });
-        const leafMat = new THREE.MeshStandardMaterial({ color: 0x229944, roughness: 0.65, side: THREE.DoubleSide });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x269e46, roughness: 0.58, flatShading: true, side: THREE.DoubleSide });
         const cocoMat = new THREE.MeshStandardMaterial({ color: 0x4e2d18, roughness: 0.7 });
 
         const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.36, 7.2, 7), trunkMat, count);
         trunks.castShadow = true;
         trunks.receiveShadow = true;
 
-        // 6 arched 3D frond blades per palm using InstancedMesh
-        const frondGeo = new THREE.BoxGeometry(0.65, 0.08, 3.6);
-        frondGeo.translate(0, 0, 1.7);
-        const fronds = new THREE.InstancedMesh(frondGeo, leafMat, count * 6);
+        // 7 arched tapered 3D frond blades per palm using InstancedMesh
+        const frondGeo = this.createPalmFrondGeo();
+        const frondsPerTree = 7;
+        const fronds = new THREE.InstancedMesh(frondGeo, leafMat, count * frondsPerTree);
         fronds.castShadow = true;
         fronds.receiveShadow = true;
 
@@ -811,13 +875,13 @@ export class TrackDecorations {
           const tip = new THREE.Vector3(0, h, 0).applyQuaternion(q);
           topPos.set(pt.x + tip.x, tip.y, pt.z + tip.z);
 
-          for (let f = 0; f < 6; f++) {
-            const frondYaw = pt.yaw + (f / 6) * Math.PI * 2 + 0.15;
-            e.set(0.32 + (f % 2) * 0.12, frondYaw, 0, 'YXZ');
+          for (let f = 0; f < frondsPerTree; f++) {
+            const frondYaw = pt.yaw + (f / frondsPerTree) * Math.PI * 2 + 0.12;
+            e.set((f % 2) * 0.14 - 0.06, frondYaw, 0, 'YXZ');
             q.setFromEuler(e);
             s.set(pt.scale, pt.scale, pt.scale);
             m.compose(topPos, q, s);
-            fronds.setMatrixAt(k * 6 + f, m);
+            fronds.setMatrixAt(k * frondsPerTree + f, m);
           }
 
           for (let c = 0; c < 3; c++) {
@@ -901,6 +965,31 @@ export class TrackDecorations {
           pos.set(pt.x, 8.4 * sc, pt.z); m.compose(pos, q, s); snow2.setMatrixAt(k, m);
         });
         this.group.add(trunks, tier1, tier2, tier3, snow1, snow2);
+
+        // Translucent glowing alpine ice crystals scattered outside barriers
+        const iceMat = new THREE.MeshStandardMaterial({
+          color: 0xb6ebff,
+          emissive: 0x0a3855,
+          emissiveIntensity: 0.45,
+          roughness: 0.15,
+          metalness: 0.35,
+          flatShading: true
+        });
+        const crystalGeo = new THREE.OctahedronGeometry(1.1, 0);
+        for (let cIdx = 0; cIdx < N; cIdx += 28) {
+          const p = track.samplePos[cIdx];
+          const n = track.sampleNorm[cIdx];
+          const side = (cIdx / 28) % 2 === 0 ? 1 : -1;
+          const x = p.x + n.x * side * (half + 5.2);
+          const z = p.z + n.z * side * (half + 5.2);
+          if (track.distanceToCentreLine(x, z, 2) < half + 4.5) continue;
+          const cr = new THREE.Mesh(crystalGeo, iceMat);
+          cr.position.set(x, 1.1, z);
+          cr.scale.set(0.75, 1.6 + (cIdx % 3) * 0.4, 0.75);
+          cr.rotation.set(0.15 * side, cIdx, 0.12);
+          cr.castShadow = true;
+          this.group.add(cr);
+        }
       }
     } else if (style === 'lamps') {
       const lampSpots = [];
@@ -981,6 +1070,29 @@ export class TrackDecorations {
           pools.setMatrixAt(k, m);
         });
         this.group.add(masts, arms, heads, pools);
+
+        // Illuminated corner chevron markers around sharp turns on Buriram Night GP
+        if (track.brakeZones && track.brakeZones.length) {
+          const chevGeo = new THREE.BoxGeometry(1.8, 1.1, 0.18);
+          const chevMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+          const postMat = new THREE.MeshStandardMaterial({ color: 0x3b4458, metalness: 0.7, roughness: 0.3 });
+          track.brakeZones.forEach(corner => {
+            const outsideSign = -Math.sign(corner.curv) || 1;
+            for (let s = -2; s <= 2; s++) {
+              const idx = track.wrapIndex(corner.index + s * (6 / track.sampleSpacing));
+              const p = track.samplePos[idx];
+              const n = track.sampleNorm[idx];
+              const x = p.x + n.x * outsideSign * (half + 2.4);
+              const z = p.z + n.z * outsideSign * (half + 2.4);
+              const sign = new THREE.Mesh(chevGeo, chevMat);
+              sign.position.set(x, 2.0, z);
+              sign.quaternion.setFromUnitVectors(Z_AXIS, track.sampleTan[idx].clone().negate());
+              const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 6), postMat);
+              leg.position.set(x, 0.8, z);
+              this.group.add(sign, leg);
+            }
+          });
+        }
       }
     } else if (style === 'rocks') {
       const rockSpots = [];
@@ -995,7 +1107,7 @@ export class TrackDecorations {
         rockSpots.push({ x, z, scale: 0.75 + this.rand() * 1.15, rot: this.rand() * Math.PI });
       }
       if (rockSpots.length) {
-        const rockMat = new THREE.MeshStandardMaterial({ color: 0x281c1a, roughness: 0.88, flatShading: true });
+        const rockMat = new THREE.MeshStandardMaterial({ color: 0x3b2420, roughness: 0.86, flatShading: true });
         const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1.9, 1), rockMat, rockSpots.length);
         rocks.castShadow = true;
         rocks.receiveShadow = true;
@@ -1012,6 +1124,20 @@ export class TrackDecorations {
           rocks.setMatrixAt(k, m);
         });
         this.group.add(rocks);
+
+        // Glowing ember magma crystals clustered near basalt rocks
+        const emberGeo = new THREE.ConeGeometry(0.55, 2.2, 5);
+        const emberMat = new THREE.MeshBasicMaterial({ color: 0xff5a00 });
+        const emberCount = Math.min(rockSpots.length, 36);
+        const embers = new THREE.InstancedMesh(emberGeo, emberMat, emberCount);
+        rockSpots.slice(0, emberCount).forEach((r, k) => {
+          q.setFromEuler(new THREE.Euler(0.25, r.rot, 0.15));
+          pos.set(r.x + 1.2, 0.85, r.z - 1.0);
+          s.set(r.scale * 0.8, r.scale, r.scale * 0.8);
+          m.compose(pos, q, s);
+          embers.setMatrixAt(k, m);
+        });
+        this.group.add(embers);
       }
 
       // Sculpted rimmed glowing lava pools scattered in volcano infield
@@ -1189,8 +1315,9 @@ export class TrackDecorations {
   buildGrandstands() {
     const track = this.track;
     const half = track.trackWidth / 2;
-    const standMat = new THREE.MeshStandardMaterial({ color: 0x242836, roughness: 0.65, metalness: 0.2 });
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x161922, roughness: 0.35, metalness: 0.85 });
+    const standColor = this.def.id === 'beach' ? 0x6f685f : this.def.id === 'snow' ? 0x5c6d84 : 0x3b435a;
+    const standMat = new THREE.MeshStandardMaterial({ color: standColor, roughness: 0.65, metalness: 0.18 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x58627a, roughness: 0.35, metalness: 0.72 });
     const roofMat = new THREE.MeshStandardMaterial({ color: this.theme.railA ?? 0xff0044, roughness: 0.35, metalness: 0.3 });
     const crowdColors = [0xff2255, 0x00d2ff, 0xffd700, 0x00ff88, 0xffffff, 0x9d4edd];
     const crowdGeo = new THREE.BoxGeometry(0.6, 0.9, 0.6);

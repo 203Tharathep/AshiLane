@@ -615,8 +615,8 @@ export class Track {
     const halfWidth = this.trackWidth / 2 + 1.2;
     const facing = tangent.clone().negate(); // face the grid (cars approach from behind)
 
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0x1f222a, metalness: 0.85, roughness: 0.3 });
-    const housingMat = new THREE.MeshStandardMaterial({ color: 0x111114, metalness: 0.9, roughness: 0.2 });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x5c667d, metalness: 0.72, roughness: 0.34 });
+    const housingMat = new THREE.MeshStandardMaterial({ color: 0x1a1d24, metalness: 0.8, roughness: 0.25 });
     const accentMat = new THREE.MeshBasicMaterial({ color: this.theme.railB ?? 0x00f3ff });
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff5db });
 
@@ -649,12 +649,14 @@ export class Track {
     trussGroup.position.set(pt.x, 9.9, pt.z);
     trussGroup.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), normal);
     const strutGeo = new THREE.BoxGeometry(0.24, 1.55, 1.1);
+    let strutIdx = 0;
     for (let sx = -this.trackWidth * 0.5; sx <= this.trackWidth * 0.5; sx += 2.4) {
       const strut = new THREE.Mesh(strutGeo, steelMat);
       strut.position.set(sx, 0, 0);
-      strut.rotation.z = sx % 4.8 === 0 ? 0.35 : -0.35;
+      strut.rotation.z = strutIdx % 2 === 0 ? 0.38 : -0.38;
       strut.castShadow = true;
       trussGroup.add(strut);
+      strutIdx++;
     }
 
     // Overhead stadium floodlight pods pointing onto start grid
