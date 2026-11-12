@@ -263,16 +263,16 @@ export class Car {
       }
     }
 
-    // 3. Steering & Turning Dynamics (ปรับให้เลี้ยวได้ง่ายขึ้น ตอบสนองไว คล่องตัว)
+    // 3. Steering & Turning Dynamics (ปรับอัตราการเลี้ยวให้นุ่มนวล ควบคุมง่าย ไม่สะบัดเร็วเกินไป)
     const targetSteer = this.inputs.steer;
-    // Fast & responsive steering response (เลี้ยวตอบสนองทันใจ ไม่หน่วง)
-    this.steeringAngle = THREE.MathUtils.lerp(this.steeringAngle, targetSteer, delta * 20.0);
+    // Smooth & controllable steering response (ลดความกระตุกเมื่อแตะเลี้ยวบนจอมือถือ)
+    this.steeringAngle = THREE.MathUtils.lerp(this.steeringAngle, targetSteer, delta * 12.0);
 
     // 4. ปรับให้เวลาเลี้ยวความเร็วจะลดลงอย่างนุ่มนวลและเป็นธรรมชาติ
     const steerMag = Math.abs(this.steeringAngle);
     if (steerMag > 0.08 && Math.abs(this.speed) > 4.0) {
-      const baseScrub = 2.4;
-      const speedScrub = (Math.abs(this.speed) / baseMaxSpeed) * 4.8;
+      const baseScrub = 1.8;
+      const speedScrub = (Math.abs(this.speed) / baseMaxSpeed) * 3.6;
       const scrubDecel = steerMag * (baseScrub + speedScrub);
       const scrubFactor = this.isFeathering ? 0.6 : (this.isDrifting ? 0.75 : 1.0);
       if (this.speed > 0) {
@@ -282,20 +282,21 @@ export class Car {
 
     // Speed ratio: responsive at all speeds (คล่องตัวแม้ช่วงความเร็วต่ำ)
     const speedRatio = Math.min(1.0, 0.45 + (Math.abs(this.speed) / 10.0) * 0.55);
-    const baseTurnRate = p.turnRate || 2.85;
+    // ปรับอัตราการเลี้ยวให้ลดลง 25-30% ตามที่ผู้ใช้ขอ เพื่อให้เลี้ยวเนียน ไม่หมุนติ้ว
+    const baseTurnRate = (p.turnRate || 2.85) * 0.75;
 
     // Grip & Agility (เลี้ยวได้ง่ายและคมกริบ ไม่ดื้อโค้ง)
-    let gripModifier = 1.05;
+    let gripModifier = 1.02;
     if (this.isFeathering) {
-      // เมื่อเลี้ยงความเร็ว (ผ่อนคันเร่งเข้าโค้ง) หน้ารถจะจิกคมขึ้นเป็นพิเศษ!
-      gripModifier = 1.30;
+      // เมื่อเลี้ยงความเร็ว (ผ่อนคันเร่งเข้าโค้ง) หน้ารถจะจิกคมขึ้น
+      gripModifier = 1.20;
     }
 
     let turnSpeed = baseTurnRate * this.steeringAngle * speedRatio * gripModifier * Math.sign(this.speed || 1);
 
     if (this.isDrifting) {
-      // Drifting provides higher yaw rate for sharp hairpins (ดริฟต์สะบัดเลี้ยวโค้งแคบได้ง่ายสะใจ)
-      turnSpeed *= 1.65;
+      // Drifting provides controlled yaw rate for hairpins
+      turnSpeed *= 1.45;
     }
 
     this.rotationY += turnSpeed * delta;
@@ -417,7 +418,7 @@ export class Car {
 
     // Steer front wheels
     if (this.steerGroups) {
-      const maxWheelAngle = 0.45;
+      const maxWheelAngle = 0.35;
       const wheelAngle = this.steeringAngle * maxWheelAngle;
       this.steerGroups.forEach(g => {
         g.rotation.y = wheelAngle;

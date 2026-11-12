@@ -11,6 +11,23 @@ export class AudioManager {
     this.screechSource = null;
     this.bgmInterval = null;
     this.speechVoices = [];
+    this.bgmAudio = null;
+    this.bgmAudioPlaying = false;
+
+    // Preload HTML5 Audio track for iOS silent mode bypass & rich music
+    if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
+      try {
+        this.bgmAudio = new Audio('/assets/audio/bgm.wav');
+        this.bgmAudio.loop = true;
+        this.bgmAudio.volume = 0.35;
+        this.bgmAudio.addEventListener('error', () => {
+          // Fallback to teaser_soundtrack if bgm.wav fails
+          if (this.bgmAudio) {
+            this.bgmAudio.src = '/assets/audio/teaser_soundtrack.wav';
+          }
+        });
+      } catch (e) {}
+    }
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.onvoiceschanged = () => {
@@ -52,7 +69,8 @@ export class AudioManager {
         }
       }).catch(() => {});
     }
-    // Mobile unlock: kick a 1-sample silent Web Audio buffer
+
+    // 1. Mobile unlock: kick a 1-sample silent Web Audio buffer
     try {
       const buffer = this.ctx.createBuffer(1, 1, 22050);
       const source = this.ctx.createBufferSource();
@@ -60,6 +78,30 @@ export class AudioManager {
       source.connect(this.ctx.destination);
       source.start(0);
     } catch (e) {}
+
+    // 2. Play a brief inaudible tone to force iOS WebKit WebAudio render pipeline alive
+    try {
+      const dummyOsc = this.ctx.createOscillator();
+      const dummyGain = this.ctx.createGain();
+      dummyGain.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+      dummyOsc.connect(dummyGain);
+      dummyGain.connect(this.ctx.destination);
+      dummyOsc.start(this.ctx.currentTime);
+      dummyOsc.stop(this.ctx.currentTime + 0.05);
+    } catch (e) {}
+
+    // 3. iOS Silent Switch Bypass: Play HTML5 Audio element synchronously inside touch event
+    if (this.bgmAudio && !this.isMuted && this.bgmEnabled) {
+      this.bgmAudio.play().then(() => {
+        this.bgmAudioPlaying = true;
+        this.bgmPlaying = true;
+      }).catch(() => {
+        // Fallback to synth BGM if HTML5 audio fails
+        if (this.bgmEnabled && !this.bgmPlaying) {
+          this.startBgm();
+        }
+      });
+    }
 
     // Prime speech synthesis on mobile user interaction
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && !this.speechPrimed) {
@@ -516,45 +558,72 @@ export class AudioManager {
 
   startBgm() {
     this.bgmEnabled = true;
-    if (!this.ensureActive() || this.bgmPlaying) return;
-    this.bgmPlaying = true;
+    if (this.isMuted) return;
+
     if (typeof document !== 'undefined') {
       const btn = document.getElementById('btn-toggle-bgm');
       if (btn) btn.textContent = '🎵 เพลง: เปิด (คลิกเพื่อปิด)';
     }
 
+    // Try HTML5 Audio background music first
+    if (this.bgmAudio) {
+      this.bgmAudio.play().then(() => {
+        this.bgmAudioPlaying = true;
+        this.bgmPlaying = true;
+      }).catch(() => {
+        // Fallback to Web Audio synth
+        this.startSynthBgm();
+      });
+      return;
+    }
+
+    this.startSynthBgm();
+  }
+
+  startSynthBgm() {
+    if (!this.ensureActive() || this.bgmPlaying) return;
+    this.bgmPlaying = true;
+
+    if (this.bgmInterval) clearInterval(this.bgmInterval);
+
     const bassline = [110, 110, 130.81, 146.83, 110, 110, 164.81, 146.83];
     let step = 0;
 
     this.bgmInterval = setInterval(() => {
-      if (!this.bgmPlaying || this.isMuted) return;
+      if (!this.bgmPlaying || this.isMuted || !this.ctx) return;
       const freq = bassline[step % bassline.length];
       step++;
 
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+      try {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
 
-      gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.18);
 
-      const filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(700, this.ctx.currentTime);
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(700, this.ctx.currentTime);
 
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
 
-      osc.start();
-      osc.stop(this.ctx.currentTime + 0.18);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.18);
+      } catch (e) {}
     }, 160);
   }
 
   stopBgm() {
     this.bgmEnabled = false;
     this.bgmPlaying = false;
+    this.bgmAudioPlaying = false;
+    if (this.bgmAudio) {
+      try { this.bgmAudio.pause(); } catch (e) {}
+    }
     if (this.bgmInterval) {
       clearInterval(this.bgmInterval);
       this.bgmInterval = null;
@@ -567,10 +636,18 @@ export class AudioManager {
 
   toggleMute() {
     this.isMuted = !this.isMuted;
-    if (this.isMuted) {
-      this.stopSpeech();
+    if (this.bgmAudio) {
+      this.bgmAudio.muted = this.isMuted;
     }
-    if (this.engineGain) {
+    if (this.isMuted) {
+      this.stopEngine();
+      this.stopBgm();
+      this.stopSpeech();
+    } else {
+      this.unlockMobileAudio();
+      if (this.bgmEnabled) this.startBgm();
+    }
+    if (this.engineGain && this.ctx) {
       this.engineGain.gain.setValueAtTime(this.isMuted ? 0 : 0.1, this.ctx.currentTime);
     }
     return this.isMuted;

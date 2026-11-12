@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,7 +20,46 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
-// Serve static files from dist or current dir
+// Case-insensitive static file resolver (solves Linux/Render .MOV vs .mov, .JPG vs .jpg, audio files)
+function caseInsensitiveStatic(baseDir) {
+  return (req, res, next) => {
+    try {
+      const decodedPath = decodeURIComponent(req.path);
+      const targetPath = path.normalize(path.join(baseDir, decodedPath));
+      if (!targetPath.startsWith(path.normalize(baseDir))) {
+        return next();
+      }
+      if (fs.existsSync(targetPath) && fs.statSync(targetPath).isFile()) {
+        return res.sendFile(targetPath);
+      }
+      const segments = decodedPath.split(/[/\\]/).filter(Boolean);
+      let curr = baseDir;
+      let matched = true;
+      for (const seg of segments) {
+        if (!fs.existsSync(curr) || !fs.statSync(curr).isDirectory()) {
+          matched = false;
+          break;
+        }
+        const entries = fs.readdirSync(curr);
+        const hit = entries.find(e => e.toLowerCase() === seg.toLowerCase());
+        if (hit) {
+          curr = path.join(curr, hit);
+        } else {
+          matched = false;
+          break;
+        }
+      }
+      if (matched && fs.existsSync(curr) && fs.statSync(curr).isFile()) {
+        return res.sendFile(curr);
+      }
+    } catch (e) {}
+    next();
+  };
+}
+
+// Serve static files (with case-insensitive resolution for assets and dist)
+app.use('/assets', caseInsensitiveStatic(path.join(__dirname, 'public/assets')));
+app.use(caseInsensitiveStatic(path.join(__dirname, 'dist')));
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
 

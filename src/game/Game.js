@@ -1708,10 +1708,10 @@ export class Game {
     this.garagePitch = THREE.MathUtils.damp(this.garagePitch, this.garageTargetPitch, 12, delta);
     this.garageDistance = THREE.MathUtils.damp(this.garageDistance, this.garageTargetDistance, 12, delta);
 
-    // Look target offset so car is framed cleanly in the open viewport area
-    const isMobileLandscape = window.innerWidth > window.innerHeight && window.innerHeight < 540;
-    const cx = isMobileLandscape ? 0.65 : 0.3;
-    const cy = 0.72;
+    // Look target offset so car is framed cleanly in the open viewport area (unobstructed by left console)
+    const isMobileLandscape = (window.innerWidth > window.innerHeight && window.innerHeight < 680) || (window.innerWidth < 960 && window.innerWidth > window.innerHeight);
+    const cx = isMobileLandscape ? 0.90 : 0.3;
+    const cy = 0.70;
     const cz = 0;
 
     const horizontalDist = this.garageDistance * Math.cos(this.garagePitch);

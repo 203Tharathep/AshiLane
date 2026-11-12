@@ -2662,17 +2662,17 @@ body, html {
 }
 
 .t-steer {
-  width: 68px;
-  height: 68px;
-  min-width: 68px;
-  min-height: 68px;
+  width: 78px;
+  height: 78px;
+  min-width: 78px;
+  min-height: 78px;
   aspect-ratio: 1 / 1 !important;
   flex-shrink: 0 !important;
-  font-size: 1.5rem;
-  border-color: rgba(0, 243, 255, 0.5);
+  font-size: 2.1rem;
+  border: 3px solid rgba(0, 243, 255, 0.65);
   color: #00f3ff;
-  background: rgba(0, 243, 255, 0.16);
-  box-shadow: 0 0 16px rgba(0, 243, 255, 0.25);
+  background: rgba(0, 243, 255, 0.2);
+  box-shadow: 0 0 20px rgba(0, 243, 255, 0.4);
 }
 
 .t-gas {
@@ -2801,10 +2801,16 @@ body, html {
   .touch-row-bottom {
     gap: 8px;
   }
+  .touch-dpad {
+    gap: 14px;
+  }
   .t-steer {
-    width: 58px;
-    height: 58px;
-    font-size: 1.3rem;
+    width: 76px;
+    height: 76px;
+    min-width: 76px;
+    min-height: 76px;
+    font-size: 2.0rem;
+    border-width: 3px;
   }
   .t-gas {
     width: 66px;
@@ -3154,35 +3160,37 @@ body, html {
   }
 }
 
-/* Landscape Mobile & Low-Height Responsive Layout (Fixes Images 1, 2, 3) */
-@media (orientation: landscape) and (max-height: 540px), (max-width: 960px) and (max-height: 540px) {
+/* Landscape Mobile & Low-Height Responsive Layout (Fixes Images 1, 2, 3, 4, 5, 6, 7) */
+@media (orientation: landscape) and (max-height: 640px), (max-width: 1024px) and (max-height: 640px), (max-height: 540px) {
   /* 1. Main Menu: Compact 2-column card that fits 100% in one view (Fixes Image 1) */
   #view-menu {
-    gap: 6px !important;
-    padding: 6px 12px !important;
+    gap: 4px !important;
+    padding: 4px 10px !important;
     justify-content: center !important;
   }
   .menu-brand {
     margin-bottom: 0 !important;
   }
   .title-sub {
-    font-size: 0.62rem !important;
+    font-size: 0.58rem !important;
     letter-spacing: 2px !important;
     margin-bottom: 0 !important;
   }
   .title-main {
-    font-size: 1.75rem !important;
+    font-size: 1.6rem !important;
     letter-spacing: 1px !important;
     line-height: 1 !important;
   }
   .title-tag {
-    font-size: 0.75rem !important;
-    margin-top: 1px !important;
+    font-size: 0.72rem !important;
+    margin-top: 0 !important;
   }
   .menu-card {
-    padding: 10px 18px !important;
-    max-width: 460px !important;
-    width: 88% !important;
+    padding: 8px 16px !important;
+    max-width: 470px !important;
+    width: 90% !important;
+    max-height: 94vh !important;
+    overflow-y: auto !important;
     margin: auto !important;
     border-radius: 14px !important;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.85) !important;
@@ -3489,64 +3497,81 @@ body, html {
     transform-origin: top right !important;
   }
 
-  /* 5. Lobby: Compact All-In-One Screen Layout (Fixes Image 2) */
+  /* 5. Lobby: Compact All-In-One Screen Layout with Pinned Actions (Fixes Image 5) */
   #view-lobby {
-    padding: 6px 12px !important;
+    padding: 4px 10px !important;
   }
   .lobby-card {
-    padding: 8px 16px !important;
-    gap: 6px !important;
-    max-height: 96vh !important;
-    overflow-y: auto !important;
+    padding: 8px 14px !important;
+    gap: 4px !important;
+    max-height: 94vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+  .lobby-header {
+    flex-shrink: 0 !important;
+    margin-bottom: 2px !important;
   }
   .room-code-tag {
-    font-size: 0.65rem !important;
+    font-size: 0.60rem !important;
   }
   .room-code-big {
-    font-size: 1.25rem !important;
+    font-size: 1.15rem !important;
     letter-spacing: 2px !important;
   }
   .code-btn-row .btn {
-    padding: 4px 10px !important;
-    font-size: 0.72rem !important;
+    padding: 3px 8px !important;
+    font-size: 0.70rem !important;
+  }
+  .lobby-players-section {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    max-height: 34vh !important;
   }
   .lobby-players-section h3 {
-    font-size: 0.8rem !important;
+    font-size: 0.76rem !important;
     margin-bottom: 2px !important;
   }
   .players-grid {
-    gap: 6px !important;
+    gap: 4px !important;
   }
   .lobby-player-card {
-    padding: 6px 10px !important;
+    padding: 4px 8px !important;
   }
   .lobby-player-card .p-avatar {
-    width: 32px !important;
-    height: 32px !important;
+    width: 28px !important;
+    height: 28px !important;
   }
   .lobby-player-card .p-name {
-    font-size: 0.82rem !important;
+    font-size: 0.78rem !important;
   }
   .lobby-settings-box {
-    padding: 4px 10px !important;
-    gap: 6px !important;
+    flex-shrink: 0 !important;
+    padding: 4px 8px !important;
+    gap: 4px !important;
     grid-template-columns: repeat(3, 1fr) !important;
   }
   .setting-item label {
-    font-size: 0.68rem !important;
-    margin-bottom: 2px !important;
+    font-size: 0.65rem !important;
+    margin-bottom: 1px !important;
   }
   .setting-item select {
-    padding: 3px 6px !important;
-    font-size: 0.72rem !important;
+    padding: 2px 4px !important;
+    font-size: 0.70rem !important;
+    height: 26px !important;
   }
   .lobby-footer {
-    margin-top: 4px !important;
+    flex-shrink: 0 !important;
+    margin-top: auto !important;
+    padding-top: 4px !important;
     gap: 6px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
   }
   .lobby-footer .btn {
-    padding: 5px 12px !important;
-    font-size: 0.8rem !important;
+    padding: 6px 14px !important;
+    font-size: 0.82rem !important;
   }
 
   /* 4. Podium / Victory Leaderboard on landscape mobile */
@@ -3588,10 +3613,14 @@ body, html {
     font-size: 0.8rem !important;
   }
 
-  /* Touch controls & HUD on mobile landscape */
+  /* Touch controls & HUD on mobile landscape: Extra Large Steering Buttons */
   #touch-controls {
     bottom: 8px !important;
     padding: 0 16px !important;
+  }
+  .touch-dpad {
+    gap: 16px !important;
+    margin-left: 6px !important;
   }
   .touch-actions {
     gap: 6px !important;
@@ -3601,13 +3630,17 @@ body, html {
     gap: 8px !important;
   }
   .t-steer {
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    min-height: 56px !important;
+    width: 80px !important;
+    height: 80px !important;
+    min-width: 80px !important;
+    min-height: 80px !important;
     aspect-ratio: 1 / 1 !important;
     flex-shrink: 0 !important;
-    font-size: 1.25rem !important;
+    font-size: 2.2rem !important;
+    border: 3px solid rgba(0, 243, 255, 0.75) !important;
+    color: #00f3ff !important;
+    background: rgba(0, 243, 255, 0.22) !important;
+    box-shadow: 0 0 24px rgba(0, 243, 255, 0.45) !important;
   }
   .t-gas {
     width: 62px !important;
