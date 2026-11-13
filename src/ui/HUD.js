@@ -196,7 +196,7 @@ export class HUD {
     }
   }
 
-  playCountdown(onStep, callback) {
+  playCountdown(onStep, callback, delayMs = 0) {
     if (!this.countdownOverlay || !this.countdownText) {
       if (onStep) onStep('GO');
       if (callback) callback();
@@ -225,7 +225,13 @@ export class HUD {
       }
     };
 
-    tick();
+    if (delayMs > 12) {
+      this.countdownText.textContent = 'READY';
+      this.countdownText.className = 'countdown-num pulse';
+      setTimeout(tick, Math.min(2000, delayMs));
+    } else {
+      tick();
+    }
   }
 
   showFinishCountdown(winnerName, isPlayerWinner = false) {

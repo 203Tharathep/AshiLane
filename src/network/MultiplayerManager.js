@@ -19,9 +19,12 @@ export class MultiplayerManager {
     this.latencyMs = null;
 
     this._txSeq = 0;
+    this._aiSeq = 0;
     this._pingTimer = null;
     this._manualClose = false;
     this._pendingAction = null;
+    this.serverClockOffset = 0;
+    this._hasClockSync = false;
 
     this.localPlayerInfo = {
       name: 'นักซิ่งอาชิ',
@@ -33,12 +36,31 @@ export class MultiplayerManager {
     };
 
     this.onStartRaceCallback = null;
+    this.onRaceReadyProgress = null;
+    this.onAllRaceReady = null;
     this.onStartCountdown = null;
     this.onRacerTransform = null;
+    this.onAiTransforms = null;
     this.onStatusChange = null;
     this.onLatencyUpdate = null;
     this.onSettingsChange = null;
     this.onConnectionLost = null;
+  }
+
+  updateClockOffset(serverTime, rttMs = 0) {
+    if (!serverTime) return;
+    const sample = (serverTime + rttMs * 0.5) - Date.now();
+    if (!this._hasClockSync) {
+      this.serverClockOffset = sample;
+      this._hasClockSync = true;
+    } else {
+      // Smooth clock offset to ignore random jitter spikes
+      this.serverClockOffset = this.serverClockOffset * 0.7 + sample * 0.3;
+    }
+  }
+
+  getServerNow() {
+    return Date.now() + this.serverClockOffset;
   }
 
   normalizeRoomCode(raw) {
@@ -276,7 +298,11 @@ export class MultiplayerManager {
   handleServerMessage(data) {
     if (data.type === 'PONG') {
       if (data.t) {
-        this.latencyMs = Math.max(1, Date.now() - data.t);
+        const rtt = Math.max(1, Date.now() - data.t);
+        this.latencyMs = rtt;
+        if (data.serverTime) {
+          this.updateClockOffset(data.serverTime, rtt);
+        }
         if (this.onLatencyUpdate) {
           this.onLatencyUpdate(this.latencyMs, 'ws');
         }
@@ -331,16 +357,31 @@ export class MultiplayerManager {
         this.notifyState();
       }
     } else if (data.type === 'START_RACE') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
       if (this.onStartRaceCallback) {
         this.onStartRaceCallback(data);
       }
+    } else if (data.type === 'RACE_READY_PROGRESS') {
+      if (this.onRaceReadyProgress) {
+        this.onRaceReadyProgress(data);
+      }
+    } else if (data.type === 'ALL_RACE_READY') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
+      if (this.onAllRaceReady) {
+        this.onAllRaceReady(data);
+      }
     } else if (data.type === 'START_COUNTDOWN') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
       if (this.onStartCountdown) {
         this.onStartCountdown(data);
       }
     } else if (data.type === 'CAR_TRANSFORM') {
       if (this.onRacerTransform) {
         this.onRacerTransform(data);
+      }
+    } else if (data.type === 'AI_TRANSFORMS') {
+      if (this.onAiTransforms) {
+        this.onAiTransforms(data);
       }
     } else if (data.type === 'CHAT') {
       if (this.onChatMessage) this.onChatMessage(data);
@@ -528,16 +569,31 @@ export class MultiplayerManager {
       this.players.delete(data.peerId);
       this.notifyState();
     } else if (data.type === 'START_RACE') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
       if (this.onStartRaceCallback) {
         this.onStartRaceCallback(data);
       }
+    } else if (data.type === 'RACE_READY_PROGRESS') {
+      if (this.onRaceReadyProgress) {
+        this.onRaceReadyProgress(data);
+      }
+    } else if (data.type === 'ALL_RACE_READY') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
+      if (this.onAllRaceReady) {
+        this.onAllRaceReady(data);
+      }
     } else if (data.type === 'START_COUNTDOWN') {
+      if (data.serverTime) this.updateClockOffset(data.serverTime, this.latencyMs || 0);
       if (this.onStartCountdown) {
         this.onStartCountdown(data);
       }
     } else if (data.type === 'CAR_TRANSFORM') {
       if (this.onRacerTransform) {
         this.onRacerTransform(data);
+      }
+    } else if (data.type === 'AI_TRANSFORMS') {
+      if (this.onAiTransforms) {
+        this.onAiTransforms(data);
       }
     } else if (data.type === 'CHAT') {
       if (this.onChatMessage) this.onChatMessage(data);
@@ -618,11 +674,47 @@ export class MultiplayerManager {
     }
   }
 
-  sendStartCountdown() {
-    const packet = { type: 'START_COUNTDOWN', timestamp: Date.now() };
+  sendRaceReady() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'RACE_READY' }));
+    } else if (this.onAllRaceReady) {
+      this.onAllRaceReady({ startAt: Date.now() + 80 });
+    }
+  }
+
+  sendStartCountdown(skipped = false) {
+    const packet = { type: 'START_COUNTDOWN', skipped: Boolean(skipped), timestamp: Date.now() };
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(packet));
     } else if (this.isHost) {
+      const fallbackPacket = { ...packet, serverStartAt: Date.now() + 120 };
+      this.broadcast(fallbackPacket);
+      if (this.onStartCountdown) this.onStartCountdown(fallbackPacket);
+    }
+  }
+
+  sendAiTransforms(aiList) {
+    if (!this.isHost || !aiList || aiList.length === 0) return;
+    const packet = {
+      type: 'AI_TRANSFORMS',
+      seq: ++this._aiSeq,
+      st: Math.round(this.getServerNow()),
+      ai: aiList.map(ai => [
+        Math.round((ai.position.x || 0) * 100) / 100,
+        Math.round((ai.position.y || 0) * 100) / 100,
+        Math.round((ai.position.z || 0) * 100) / 100,
+        Math.round((ai.rotationY || 0) * 1000) / 1000,
+        Math.round((ai.speed || 0) * 10) / 10,
+        ai.isDrifting ? 1 : 0,
+        Math.round((ai.boostTimer || 0) * 100) / 100,
+        ai.lap || 1,
+        Math.round((ai.totalDistance || 0) * 100) / 100,
+        ai.isFinished ? 1 : 0
+      ])
+    };
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(packet));
+    } else {
       this.broadcast(packet);
     }
   }
@@ -632,6 +724,7 @@ export class MultiplayerManager {
       type: 'CAR_TRANSFORM',
       peerId: this.localPlayerId,
       seq: ++this._txSeq,
+      st: Math.round(this.getServerNow()),
       x: Math.round((transformData.x || 0) * 100) / 100,
       y: Math.round((transformData.y || 0) * 100) / 100,
       z: Math.round((transformData.z || 0) * 100) / 100,

@@ -18,6 +18,12 @@ function getSharedAssetTexture(url) {
   return tex;
 }
 
+export function preloadBillboardTextures() {
+  SKINS.slice(0, 12).forEach(s => {
+    if (s && s.file) getSharedAssetTexture(`/assets/ashi/${s.file}`);
+  });
+}
+
 /**
  * Rich per-stage 3D atmosphere, lighting, sky dome, and shadow direction presets.
  * Shared between Game.js (lights & shadows) and TrackDecorations.js (sky & props)

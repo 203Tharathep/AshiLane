@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Track } from './Track.js';
-import { TrackDecorations, STAGE_ATMOSPHERE } from './TrackDecorations.js';
+import { TrackDecorations, STAGE_ATMOSPHERE, preloadBillboardTextures } from './TrackDecorations.js';
 import { CarModelBuilder } from './CarModelBuilder.js';
 import { Car } from './Car.js';
 import { AICar } from './AICar.js';
@@ -98,7 +98,22 @@ export class Game {
     this.multiplayer.onLatencyUpdate = (ms, transport) => this.ui.updateNetworkStatus({ state: 'connected', latencyMs: ms, transport });
     this.multiplayer.onSettingsChange = (settings) => this.ui.updateLobbySettingsDisplay(settings);
     this.multiplayer.onConnectionLost = (reason) => this.handleMultiplayerDisconnected(reason);
+    this.multiplayer.onRaceReadyProgress = (data) => this.onRaceReadyProgress(data);
+    this.multiplayer.onAllRaceReady = (data) => this.onAllRaceReady(data);
+    this.multiplayer.onAiTransforms = (data) => this.onRemoteAiTransforms(data);
     this.multiplayer.warmUpServer();
+
+    // Pre-allocated scratch vectors for zero-GC multiplayer / physics loop
+    this._tmpVec = new THREE.Vector3();
+    this._predPos = new THREE.Vector3();
+    this._smokeVecL = new THREE.Vector3();
+    this._smokeVecR = new THREE.Vector3();
+    this._yAxis = new THREE.Vector3(0, 1, 0);
+    this._pendingSyncStart = null;
+    this._syncFailsafeTimer = null;
+    this._countdownWaitTimer = null;
+    this._lastAiSeq = 0;
+    this.lastAiNetPacket = 0;
 
     // Inputs
     this.keys = {};
@@ -127,9 +142,10 @@ export class Game {
       1200
     );
 
+    const isTouchDevice = (typeof window !== 'undefined' && (window.innerWidth <= 900 || (navigator.maxTouchPoints || 0) > 0));
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.35 : 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -149,8 +165,9 @@ export class Game {
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.65);
     this.dirLight.position.copy(this.sunOffset);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
+    const shadowSize = isTouchDevice ? 1024 : 2048;
+    this.dirLight.shadow.mapSize.width = shadowSize;
+    this.dirLight.shadow.mapSize.height = shadowSize;
     this.dirLight.shadow.camera.near = 2;
     this.dirLight.shadow.camera.far = 220;
     const shadowD = 62;
@@ -439,12 +456,12 @@ export class Game {
     this.playGridIntro(lineupRacers, stageTitle, () => this.startCountdown());
   }
 
-  playGridIntro(racers, stageTitle, onComplete) {
+  playGridIntro(racers, stageTitle, onComplete, options = {}) {
     this.state = 'GRID_INTRO';
     this.gridIntroTimer = 0;
     this.gridIntroRacers = racers || [];
     this.gridIntroOnComplete = onComplete;
-    this.countdownActive = true;
+    this.countdownActive = false;
     this.isRacing = false;
     this.lastGridFocusedIndex = -1;
 
@@ -467,14 +484,15 @@ export class Game {
       ai.inputs.drift = false;
     });
 
+    const isFastMp = Boolean(options.isMultiplayerFast);
     const totalCars = Math.max(1, this.gridIntroRacers.length);
     if (totalCars === 1) {
       this.rivalSlotDuration = 0;
-      this.playerSlotDuration = 3.6;
-      this.gridIntroDuration = 3.6;
+      this.playerSlotDuration = isFastMp ? 1.8 : 3.6;
+      this.gridIntroDuration = this.playerSlotDuration;
     } else {
-      this.rivalSlotDuration = 2.8; // 2.8s rotating showcase per rival (smooth camera orbit & clear name announcement)
-      this.playerSlotDuration = 3.6;  // 3.6s rotating showcase & swoop for player
+      this.rivalSlotDuration = isFastMp ? 1.25 : 2.8;
+      this.playerSlotDuration = isFastMp ? 1.8 : 3.6;
       this.gridIntroDuration = (totalCars - 1) * this.rivalSlotDuration + this.playerSlotDuration;
     }
 
@@ -724,7 +742,7 @@ export class Game {
     });
   }
 
-  finishGridIntro() {
+  finishGridIntro(suppressCallback = false) {
     if (this.state !== 'GRID_INTRO') return;
 
     if (this.audio && this.audio.stopSpeech) {
@@ -735,10 +753,10 @@ export class Game {
     if (this.playerCar) {
       const playerPos = this.playerCar.position;
       const playerRotY = this.playerCar.rotationY;
-      const chaseOffset = this.cameraOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+      const chaseOffset = this.cameraOffset.clone().applyAxisAngle(this._yAxis, playerRotY);
       this.camera.position.copy(playerPos).add(chaseOffset);
 
-      const lookTargetOffset = this.cameraLookOffset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotY);
+      const lookTargetOffset = this.cameraLookOffset.clone().applyAxisAngle(this._yAxis, playerRotY);
       this.camera.lookAt(playerPos.clone().add(lookTargetOffset));
       this.camera.fov = 65;
       this.camera.updateProjectionMatrix();
@@ -746,32 +764,60 @@ export class Game {
 
     this.ui.hideGridIntro();
     this.ui.showView('hud');
+    this.countdownActive = false;
     this.state = 'RACING';
 
     if (this.gridIntroOnComplete) {
       const cb = this.gridIntroOnComplete;
       this.gridIntroOnComplete = null;
-      cb();
+      if (!suppressCallback) cb();
     }
   }
 
-  onMultiplayerStartCountdown() {
+  onMultiplayerIntroFinished() {
+    if (this._countdownWaitTimer) {
+      clearTimeout(this._countdownWaitTimer);
+      this._countdownWaitTimer = null;
+    }
+    if (this.multiplayer && this.multiplayer.isHost) {
+      this.multiplayer.sendStartCountdown(true);
+      // Safety fallback only if disconnected offline
+      this._countdownWaitTimer = setTimeout(() => {
+        if (!this.isRacing && !this.countdownActive) {
+          this.startCountdown(0);
+        }
+      }, 2000);
+    } else {
+      // Non-host waits at grid line until Host's synchronized START_COUNTDOWN arrives
+      this.countdownActive = false;
+      this.isRacing = false;
+      this.ui.showToast('⏳ รอเจ้าของห้องเริ่มสัญญาณไฟปล่อยตัว...', 'info', 4000);
+      this._countdownWaitTimer = setTimeout(() => {
+        if (!this.isRacing && !this.countdownActive) {
+          this.startCountdown(0);
+        }
+      }, 8000);
+    }
+  }
+
+  onMultiplayerStartCountdown(packet = {}) {
+    if (this._countdownWaitTimer) {
+      clearTimeout(this._countdownWaitTimer);
+      this._countdownWaitTimer = null;
+    }
     if (this.state === 'GRID_INTRO') {
-      this.finishGridIntro();
+      this.finishGridIntro(true);
     }
     if (!this.countdownActive && !this.isRacing) {
-      this.startCountdown();
+      const serverNow = this.multiplayer ? this.multiplayer.getServerNow() : Date.now();
+      const delayMs = packet.serverStartAt ? Math.max(0, packet.serverStartAt - serverNow) : 0;
+      this.startCountdown(delayMs);
     }
   }
 
-  startCountdown() {
+  startCountdown(delayMs = 0) {
     this.countdownActive = true;
     this.isRacing = false;
-
-    // In multiplayer, host synchronizes countdown launch across all players
-    if (this.gameMode === 'multiplayer' && this.multiplayer && this.multiplayer.isHost) {
-      this.multiplayer.sendStartCountdown();
-    }
 
     if (this.playerCar) {
       this.playerCar.speed = 0;
@@ -816,7 +862,8 @@ export class Game {
         this.countdownActive = false;
         this.isRacing = true;
         this.raceStartTime = performance.now();
-      }
+      },
+      delayMs
     );
   }
 
@@ -872,12 +919,83 @@ export class Game {
   }
 
   // --- Multiplayer Lifecycle ---
+  preloadLobbyAssets(players = []) {
+    try {
+      preloadBillboardTextures();
+      if (this.carBuilder) {
+        SKINS.slice(0, 8).forEach(s => this.carBuilder.loadSkinTexture(s.file));
+        players.forEach(p => {
+          if (p && p.skinFileName) this.carBuilder.loadSkinTexture(p.skinFileName);
+        });
+      }
+      if (this.audio && this.audio.preloadVoiceClips) {
+        this.audio.preloadVoiceClips();
+      }
+    } catch (e) {}
+  }
+
   onMultiplayerStateChanged(lobbyState) {
     this.ui.syncLobbyHostState(lobbyState.isHost, lobbyState.settings);
     this.ui.updateLobbyPlayers(lobbyState.players, lobbyState.localPlayerId);
+    this.preloadLobbyAssets(lobbyState.players || []);
+  }
+
+  onRaceReadyProgress(data) {
+    if (!this._pendingSyncStart) return;
+    const ready = data?.readyCount || 1;
+    const total = data?.totalCount || 1;
+    this.ui.showToast(`⏳ กำลังซิงค์สนามกับเพื่อน (${ready}/${total} พร้อม)...`, 'info', 4000);
+  }
+
+  onAllRaceReady() {
+    if (this._syncFailsafeTimer) {
+      clearTimeout(this._syncFailsafeTimer);
+      this._syncFailsafeTimer = null;
+    }
+    if (this._pendingSyncStart) {
+      const fn = this._pendingSyncStart;
+      this._pendingSyncStart = null;
+      fn();
+    }
+  }
+
+  onRemoteAiTransforms(data) {
+    if (!data || !Array.isArray(data.ai)) return;
+    if (this.multiplayer && this.multiplayer.isHost) return;
+    if (data.seq !== undefined && data.seq <= this._lastAiSeq) return;
+    if (data.seq !== undefined) this._lastAiSeq = data.seq;
+
+    const now = performance.now();
+    for (let i = 0; i < data.ai.length && i < this.aiCars.length; i++) {
+      const ai = this.aiCars[i];
+      const row = data.ai[i];
+      if (!ai || !row) continue;
+      if (!ai.netTargetPos) ai.netTargetPos = ai.position.clone();
+      ai.netTargetPos.set(row[0], row[1], row[2]);
+      ai.netTargetRotY = row[3];
+      ai.speed = row[4];
+      ai.isDrifting = Boolean(row[5]);
+      ai.boostTimer = row[6];
+      ai.lap = row[7];
+      ai.totalDistance = row[8];
+      ai.netLastRecvTime = now;
+      if (row[9] && !ai.isFinished) {
+        ai.isFinished = true;
+        this.onCarFinished(ai);
+      }
+    }
   }
 
   handleMultiplayerDisconnected(reason) {
+    if (this._syncFailsafeTimer) {
+      clearTimeout(this._syncFailsafeTimer);
+      this._syncFailsafeTimer = null;
+    }
+    if (this._countdownWaitTimer) {
+      clearTimeout(this._countdownWaitTimer);
+      this._countdownWaitTimer = null;
+    }
+    this._pendingSyncStart = null;
     if (this.ui && this.ui.viewLobby && !this.ui.viewLobby.classList.contains('hidden')) {
       this.ui.showToast(reason || 'หลุดการเชื่อมต่อจากห้อง', 'error', 4000);
       this.ui.showView('menu');
@@ -889,8 +1007,18 @@ export class Game {
   }
 
   onMultiplayerStartRace(packet) {
+    if (this._syncFailsafeTimer) clearTimeout(this._syncFailsafeTimer);
+    if (this._countdownWaitTimer) clearTimeout(this._countdownWaitTimer);
+    this._pendingSyncStart = null;
+
     this.gameMode = 'multiplayer';
     this.state = 'RACING';
+    this.isRacing = false;
+    this.countdownActive = false;
+    this.lastNetPacket = 0;
+    this.lastAiNetPacket = 0;
+    this._lastAiSeq = 0;
+
     this.audio.unlockMobileAudio();
     if (this.audio.bgmEnabled && !this.audio.bgmPlaying) {
       this.audio.startBgm();
@@ -986,7 +1114,8 @@ export class Game {
           nametag,
           skinFileName: remoteSkin,
           targetPos: remoteCar.position.clone(),
-          targetRotY: remoteCar.rotationY
+          targetRotY: remoteCar.rotationY,
+          lastRecvTime: performance.now()
         });
       }
     });
@@ -1006,10 +1135,14 @@ export class Game {
         ai.setModel(built);
         this.scene.add(ai.model);
         this.positionCarAtStart(ai, gridSlot);
+        ai.netTargetPos = ai.position.clone();
+        ai.netTargetRotY = ai.rotationY;
+        ai.netLastRecvTime = performance.now();
         this.aiCars.push(ai);
       }
     }
 
+    // Showcase human players first (plus up to 2 bots max) in Multiplayer so everyone launches fast & in sync
     const lineupRacers = [];
     playersList.forEach(p => {
       const isMe = p.id === this.multiplayer.localPlayerId;
@@ -1027,7 +1160,7 @@ export class Game {
       });
     });
 
-    this.aiCars.forEach(ai => {
+    this.aiCars.slice(0, 1).forEach(ai => {
       lineupRacers.push({
         name: ai.name,
         carName: ai.config?.nameTh || 'รถซิ่งอาชิ',
@@ -1040,8 +1173,36 @@ export class Game {
       });
     });
 
+    // Snap camera behind starting grid & precompile ALL Three.js GPU shaders BEFORE countdown!
+    if (this.playerCar) {
+      const chaseOffset = this.cameraOffset.clone().applyAxisAngle(this._yAxis, this.playerCar.rotationY);
+      this.camera.position.copy(this.playerCar.position).add(chaseOffset);
+      const lookOffset = this.cameraLookOffset.clone().applyAxisAngle(this._yAxis, this.playerCar.rotationY);
+      this.camera.lookAt(this.playerCar.position.clone().add(lookOffset));
+    }
+    this.ui.showView('hud');
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      this.renderer.render(this.scene, this.camera);
+    } catch (e) {}
+
     const stageTitle = this.track?.def ? `${this.track.def.icon || '🏁'} ${this.track.def.nameTh}` : 'MULTIPLAYER GRID';
-    this.playGridIntro(lineupRacers, stageTitle, () => this.startCountdown());
+    this.ui.showToast('⏳ กำลังซิงค์สนามกับเพื่อนทุกคน...', 'info', 4500);
+
+    // Wait for RACE_READY barrier so every device starts Grid Intro at the exact same moment!
+    this._pendingSyncStart = () => {
+      this.playGridIntro(lineupRacers, stageTitle, () => this.onMultiplayerIntroFinished(), { isMultiplayerFast: true });
+    };
+
+    this._syncFailsafeTimer = setTimeout(() => {
+      this.onAllRaceReady();
+    }, 5000);
+
+    if (this.multiplayer) {
+      this.multiplayer.sendRaceReady();
+    } else {
+      this.onAllRaceReady();
+    }
   }
 
   onRemoteRacerTransform(data) {
@@ -1076,7 +1237,8 @@ export class Game {
           nametag,
           skinFileName: remoteSkin,
           targetPos: new THREE.Vector3(data.x, data.y, data.z),
-          targetRotY: data.rotY
+          targetRotY: data.rotY,
+          lastRecvTime: performance.now()
         };
         this.remotePlayers.set(data.peerId, remote);
       } else {
@@ -1094,9 +1256,10 @@ export class Game {
       remote.lastSeq = data.seq;
     }
 
+    this._tmpVec.set(data.x, data.y, data.z);
     // Instant snap if teleported or initial position jump > 15 meters
-    if (remote.car.position.distanceTo(new THREE.Vector3(data.x, data.y, data.z)) > 15) {
-      remote.car.position.set(data.x, data.y, data.z);
+    if (remote.car.position.distanceTo(this._tmpVec) > 15) {
+      remote.car.position.copy(this._tmpVec);
       remote.car.rotationY = data.rotY;
       if (remote.car.model) {
         remote.car.model.position.copy(remote.car.position);
@@ -1104,8 +1267,9 @@ export class Game {
       }
     }
 
-    remote.targetPos.set(data.x, data.y, data.z);
+    remote.targetPos.copy(this._tmpVec);
     remote.targetRotY = data.rotY;
+    remote.lastRecvTime = performance.now();
     remote.car.speed = data.speed;
     remote.car.isDrifting = data.isDrifting;
     remote.car.boostTimer = data.boostTimer;
@@ -1897,6 +2061,51 @@ export class Game {
     }
   }
 
+  updateRemoteCarsVisuals(delta) {
+    const now = performance.now();
+    this.remotePlayers.forEach(remote => {
+      if (!remote.car) return;
+
+      // Extrapolate forward smoothly using last velocity to counter network latency
+      const ageSec = Math.min(0.08, Math.max(0, (now - (remote.lastRecvTime || now)) * 0.001));
+      const spd = remote.car.speed || 0;
+      const rotY = remote.targetRotY || 0;
+      this._predPos.set(
+        remote.targetPos.x + Math.sin(rotY) * spd * ageSec,
+        remote.targetPos.y,
+        remote.targetPos.z + Math.cos(rotY) * spd * ageSec
+      );
+
+      // Instant snap if distance is large (teleport / initial spawn)
+      if (remote.car.position.distanceTo(this._predPos) > 15) {
+        remote.car.position.copy(this._predPos);
+        remote.car.rotationY = rotY;
+      } else {
+        remote.car.position.lerp(this._predPos, Math.min(1, delta * 24));
+      }
+
+      // Shortest angular difference prevents 360-spin flipping glitch
+      let rotDiff = rotY - remote.car.rotationY;
+      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+      remote.car.rotationY += rotDiff * Math.min(1, delta * 24);
+
+      remote.car.updateVisuals(delta);
+
+      if (remote.nametag) {
+        remote.nametag.position.set(remote.car.position.x, remote.car.position.y + 1.6, remote.car.position.z);
+      }
+
+      // Remote car drifting smoke & boost fire
+      if (remote.car.isDrifting && remote.car.speed > 5 && this.particles) {
+        this.particles.emitTireSmoke(remote.car.position);
+      }
+      if (remote.car.boostTimer > 0 && remote.car.exhaustPipes && this.particles) {
+        this.particles.emitExhaustFlame(remote.car.exhaustPipes, true);
+      }
+    });
+  }
+
   updateRace(delta) {
     if (!this.isRacing) {
       // บอทและผู้เล่นไม่ออกรถไปก่อน: หยุดนิ่งอยู่กับที่บนกริดสตาร์ทจนกว่าสัญญาณ GO จะเริ่ม
@@ -1918,6 +2127,7 @@ export class Game {
         ai.updateVisuals(delta);
       });
 
+      this.updateRemoteCarsVisuals(delta);
       this.audio.updateEngine(0, 0, false, false);
       this.updateCamera(delta);
       return;
@@ -1941,17 +2151,17 @@ export class Game {
       this.hud.showReaction('🚀 บูสต์ติดจรวด!', 1200);
     }
 
-    // Tire smoke particles on drift
+    // Tire smoke particles on drift (zero-GC scratch vectors)
     if (this.playerCar.isDrifting) {
-      const smokePosL = this.playerCar.position.clone().add(new THREE.Vector3(-0.6, 0.1, -1.0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.playerCar.rotationY));
-      const smokePosR = this.playerCar.position.clone().add(new THREE.Vector3(0.6, 0.1, -1.0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.playerCar.rotationY));
-      this.particles.emitTireSmoke(smokePosL);
-      this.particles.emitTireSmoke(smokePosR);
+      this._smokeVecL.set(-0.6, 0.1, -1.0).applyAxisAngle(this._yAxis, this.playerCar.rotationY).add(this.playerCar.position);
+      this._smokeVecR.set(0.6, 0.1, -1.0).applyAxisAngle(this._yAxis, this.playerCar.rotationY).add(this.playerCar.position);
+      this.particles.emitTireSmoke(this._smokeVecL);
+      this.particles.emitTireSmoke(this._smokeVecR);
 
       // Mini-turbo sparks
       if (this.playerCar.driftLevel > 0) {
-        this.particles.emitDriftSparks(smokePosL, this.playerCar.driftLevel);
-        this.particles.emitDriftSparks(smokePosR, this.playerCar.driftLevel);
+        this.particles.emitDriftSparks(this._smokeVecL, this.playerCar.driftLevel);
+        this.particles.emitDriftSparks(this._smokeVecR, this.playerCar.driftLevel);
       }
     }
 
@@ -1960,55 +2170,56 @@ export class Game {
       this.particles.emitExhaustFlame(this.playerCar.exhaustPipes, true);
     }
 
-    // 2. Update AI Cars
-    const allRacerCars = [
-      this.playerCar,
-      ...this.aiCars,
-      ...Array.from(this.remotePlayers.values()).map(r => r.car)
-    ];
+    // 2. Update AI Cars (In multiplayer, Host simulates AI & friends interpolate so bots match 1:1!)
+    const isMpClient = this.gameMode === 'multiplayer' && this.multiplayer && !this.multiplayer.isHost;
+    if (!isMpClient) {
+      const allRacerCars = [
+        this.playerCar,
+        ...this.aiCars,
+        ...Array.from(this.remotePlayers.values()).map(r => r.car)
+      ];
 
-    this.aiCars.forEach(ai => {
-      ai.updateAI(delta, this.track, this.playerCar, allRacerCars);
-      if (ai.isDrifting) {
-        this.particles.emitTireSmoke(ai.position);
-      }
-    });
+      this.aiCars.forEach(ai => {
+        ai.updateAI(delta, this.track, this.playerCar, allRacerCars);
+        if (ai.isDrifting) {
+          this.particles.emitTireSmoke(ai.position);
+        }
+      });
+    } else {
+      const now = performance.now();
+      this.aiCars.forEach(ai => {
+        if (ai.netTargetPos) {
+          const ageSec = Math.min(0.08, Math.max(0, (now - (ai.netLastRecvTime || now)) * 0.001));
+          const rotY = ai.netTargetRotY || 0;
+          const spd = ai.speed || 0;
+          this._predPos.set(
+            ai.netTargetPos.x + Math.sin(rotY) * spd * ageSec,
+            ai.netTargetPos.y,
+            ai.netTargetPos.z + Math.cos(rotY) * spd * ageSec
+          );
+          if (ai.position.distanceTo(this._predPos) > 15) {
+            ai.position.copy(this._predPos);
+            ai.rotationY = rotY;
+          } else {
+            ai.position.lerp(this._predPos, Math.min(1, delta * 22));
+          }
+          let rotDiff = rotY - ai.rotationY;
+          while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
+          while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
+          ai.rotationY += rotDiff * Math.min(1, delta * 22);
+        }
+        ai.updateVisuals(delta);
+        if (ai.isDrifting && ai.speed > 5) {
+          this.particles.emitTireSmoke(ai.position);
+        }
+      });
+    }
 
     // 3. Resolve Car-to-Car Collisions (รถชนกันความเร็วตกฮวบ)
     this.resolveCarCollisions(delta);
 
-    // 3. Update Remote Multiplayer Cars (Interpolation & Visuals)
-    this.remotePlayers.forEach(remote => {
-      if (!remote.car) return;
-
-      // Instant snap if distance is large (teleport / first packet)
-      if (remote.car.position.distanceTo(remote.targetPos) > 15) {
-        remote.car.position.copy(remote.targetPos);
-        remote.car.rotationY = remote.targetRotY;
-      } else {
-        remote.car.position.lerp(remote.targetPos, Math.min(1, delta * 18));
-      }
-
-      // Shortest angular difference prevents 360-spin flipping glitch
-      let rotDiff = remote.targetRotY - remote.car.rotationY;
-      while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
-      while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
-      remote.car.rotationY += rotDiff * Math.min(1, delta * 18);
-
-      remote.car.updateVisuals(delta);
-
-      if (remote.nametag) {
-        remote.nametag.position.set(remote.car.position.x, remote.car.position.y + 1.6, remote.car.position.z);
-      }
-
-      // Remote car drifting smoke & boost fire
-      if (remote.car.isDrifting && remote.car.speed > 5 && this.particles) {
-        this.particles.emitTireSmoke(remote.car.position);
-      }
-      if (remote.car.boostTimer > 0 && remote.car.exhaustPipes && this.particles) {
-        this.particles.emitExhaustFlame(remote.car.exhaustPipes, true);
-      }
-    });
+    // 3.5 Update Remote Multiplayer Cars (Extrapolation, Interpolation & Visuals)
+    this.updateRemoteCarsVisuals(delta);
 
     // 4. Update Item System (Boxes, Bananas, Missiles)
     if (this.items) {
@@ -2019,10 +2230,10 @@ export class Game {
       this.items.update(delta, this.playerCar, opponents);
     }
 
-    // 5. Send Multiplayer Network Packet at ~25Hz
+    // 5. Send Multiplayer Network Packets at ~33Hz (Player) & ~20Hz (Host AI)
     if (this.gameMode === 'multiplayer' && this.isRacing) {
       const now = performance.now();
-      if (!this.lastNetPacket || now - this.lastNetPacket > 40) {
+      if (!this.lastNetPacket || now - this.lastNetPacket >= 30) {
         this.lastNetPacket = now;
         this.multiplayer.sendTransform({
           x: this.playerCar.position.x,
@@ -2036,6 +2247,11 @@ export class Game {
           totalDistance: this.playerCar.totalDistance,
           isFinished: this.playerCar.isFinished
         });
+      }
+
+      if (this.multiplayer.isHost && this.aiCars.length > 0 && (!this.lastAiNetPacket || now - this.lastAiNetPacket >= 50)) {
+        this.lastAiNetPacket = now;
+        this.multiplayer.sendAiTransforms(this.aiCars);
       }
     }
 

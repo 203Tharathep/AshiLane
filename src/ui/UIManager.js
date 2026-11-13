@@ -325,9 +325,9 @@ export class UIManager {
       const aiVal = document.getElementById('lobby-ai-select')?.value || 'auto';
       const aiCount = (aiVal === 'auto') ? 'auto' : parseInt(aiVal, 10);
       const trackId = document.getElementById('lobby-stage-select')?.value || 'buriram';
-      this.triggerRaceStartTransition(() => {
-        this.game.multiplayer.startRace({ laps, aiCount, trackId });
-      });
+      // Broadcast START_RACE immediately so friends load concurrently without 260ms curtain delay
+      this.game.multiplayer.startRace({ laps, aiCount, trackId });
+      this.triggerRaceStartTransition();
     });
 
     document.getElementById('btn-ready')?.addEventListener('click', () => {

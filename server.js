@@ -10,7 +10,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// Minimize latency by disabling Nagle's algorithm & WebSocket per-message compression overhead
+server.on('connection', (socket) => {
+  try { socket.setNoDelay(true); } catch (e) {}
+});
+const wss = new WebSocketServer({ server, perMessageDeflate: false });
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS_PER_ROOM = 8;
@@ -107,17 +111,22 @@ app.use('/assets', express.static(path.join(__dirname, 'public/assets'), { maxAg
 // roomCode -> { code, hostId, maxPlayers, status, settings, createdAt, members: Map<WebSocket, playerInfo> }
 const rooms = new Map();
 
+function serializeWsPayload(payload) {
+  if (typeof payload === 'string') return payload;
+  if (Buffer.isBuffer(payload)) return payload.toString('utf8');
+  return JSON.stringify(payload);
+}
+
 function safeSend(ws, payload) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   try {
-    const msg = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    ws.send(msg);
+    ws.send(serializeWsPayload(payload));
   } catch (e) {}
 }
 
 function broadcastToRoom(room, data, excludeWs = null) {
   if (!room || !room.members) return;
-  const msg = typeof data === 'string' ? data : JSON.stringify(data);
+  const msg = serializeWsPayload(data);
   room.members.forEach((player, clientWs) => {
     if (clientWs !== excludeWs) {
       safeSend(clientWs, msg);
@@ -125,7 +134,23 @@ function broadcastToRoom(room, data, excludeWs = null) {
   });
 }
 
+function releaseRaceReadyBarrier(room) {
+  if (!room || room.barrierReleased) return;
+  room.barrierReleased = true;
+  if (room.readyTimer) {
+    clearTimeout(room.readyTimer);
+    room.readyTimer = null;
+  }
+  const now = Date.now();
+  broadcastToRoom(room, {
+    type: 'ALL_RACE_READY',
+    serverTime: now,
+    startAt: now + 180
+  });
+}
+
 wss.on('connection', (ws) => {
+  try { ws._socket?.setNoDelay?.(true); } catch (e) {}
   let currentRoomCode = null;
   let currentPlayerData = null;
 
@@ -150,19 +175,35 @@ wss.on('connection', (ws) => {
 
       // If room is empty, delete it
       if (room.members.size === 0) {
+        if (room.readyTimer) {
+          clearTimeout(room.readyTimer);
+          room.readyTimer = null;
+        }
         rooms.delete(currentRoomCode);
-      } else if (leavingPlayer && leavingPlayer.id === room.hostId) {
-        // Auto-promote next remaining member to Host
-        const nextEntry = room.members.entries().next().value;
-        const nextPlayer = nextEntry ? nextEntry[1] : null;
-        if (nextPlayer) {
-          nextPlayer.isHost = true;
-          nextPlayer.isReady = true;
-          room.hostId = nextPlayer.id;
-          broadcastToRoom(room, {
-            type: 'HOST_CHANGED',
-            newHostId: nextPlayer.id
+      } else {
+        if (leavingPlayer && leavingPlayer.id === room.hostId) {
+          // Auto-promote next remaining member to Host
+          const nextEntry = room.members.entries().next().value;
+          const nextPlayer = nextEntry ? nextEntry[1] : null;
+          if (nextPlayer) {
+            nextPlayer.isHost = true;
+            nextPlayer.isReady = true;
+            room.hostId = nextPlayer.id;
+            broadcastToRoom(room, {
+              type: 'HOST_CHANGED',
+              newHostId: nextPlayer.id
+            });
+          }
+        }
+        // If waiting on scene load barrier and remaining players are all ready, release immediately
+        if (room.status === 'racing' && !room.barrierReleased && room.readyPlayers) {
+          let allReady = true;
+          room.members.forEach((m) => {
+            if (!room.readyPlayers.has(m.id)) allReady = false;
           });
+          if (allReady) {
+            releaseRaceReadyBarrier(room);
+          }
         }
       }
     }
@@ -172,7 +213,8 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (message) => {
     try {
-      const data = JSON.parse(message);
+      const rawText = Buffer.isBuffer(message) ? message.toString('utf8') : String(message);
+      const data = JSON.parse(rawText);
 
       // 0. APPLICATION HEARTBEAT (keeps mobile carrier NATs alive + RTT measurement)
       if (data.type === 'PING') {
@@ -325,23 +367,56 @@ wss.on('connection', (ws) => {
         }
       }
 
-      // 4. START RACE (Host broadcasts to all)
+      // 4. START RACE (Host broadcasts to all & starts load-sync barrier)
       else if (data.type === 'START_RACE') {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
         const room = rooms.get(currentRoomCode);
         const player = room.members.get(ws);
         if (player && player.id === room.hostId) {
           room.status = 'racing';
+          room.barrierReleased = false;
+          room.readyPlayers = new Set();
+          if (room.readyTimer) {
+            clearTimeout(room.readyTimer);
+          }
+          // Failsafe barrier timeout (4.5s) in case a device stalls on initial load
+          room.readyTimer = setTimeout(() => {
+            releaseRaceReadyBarrier(room);
+          }, 4500);
+
           if (data.settings) {
             room.settings = { ...room.settings, ...data.settings };
           }
           const packet = {
             type: 'START_RACE',
-            startTime: Date.now() + 3000,
+            serverTime: Date.now(),
             settings: room.settings
           };
-          // Broadcast to everyone including host
           broadcastToRoom(room, packet);
+        }
+      }
+
+      // 4.1 CLIENT SCENE + SHADER READY BARRIER
+      else if (data.type === 'RACE_READY') {
+        if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
+        const room = rooms.get(currentRoomCode);
+        const player = room.members.get(ws);
+        if (!player || room.barrierReleased) return;
+        if (!room.readyPlayers) room.readyPlayers = new Set();
+        room.readyPlayers.add(player.id);
+
+        broadcastToRoom(room, {
+          type: 'RACE_READY_PROGRESS',
+          readyCount: room.readyPlayers.size,
+          totalCount: room.members.size
+        });
+
+        let allReady = true;
+        room.members.forEach((m) => {
+          if (!room.readyPlayers.has(m.id)) allReady = false;
+        });
+        if (allReady) {
+          releaseRaceReadyBarrier(room);
         }
       }
 
@@ -350,6 +425,11 @@ wss.on('connection', (ws) => {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
         const room = rooms.get(currentRoomCode);
         room.status = 'lobby';
+        room.barrierReleased = false;
+        if (room.readyTimer) {
+          clearTimeout(room.readyTimer);
+          room.readyTimer = null;
+        }
         room.members.forEach((m) => {
           m.isReady = m.id === room.hostId;
         });
@@ -359,26 +439,44 @@ wss.on('connection', (ws) => {
         });
       }
 
-      // 4.5 SYNCHRONIZED COUNTDOWN START
+      // 4.5 SYNCHRONIZED COUNTDOWN START (Server-clock aligned across all peers)
       else if (data.type === 'START_COUNTDOWN') {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
         const room = rooms.get(currentRoomCode);
-        broadcastToRoom(room, message, ws);
+        const player = room.members.get(ws);
+        if (player && player.id === room.hostId) {
+          const now = Date.now();
+          broadcastToRoom(room, {
+            type: 'START_COUNTDOWN',
+            serverTime: now,
+            serverStartAt: now + 180,
+            skipped: Boolean(data.skipped)
+          });
+        }
       }
 
-      // 5. CAR TRANSFORM (High speed ~25Hz relay)
+      // 5. CAR TRANSFORM (High speed ~33Hz UTF-8 text relay without Nagle delay)
       else if (data.type === 'CAR_TRANSFORM') {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
         const room = rooms.get(currentRoomCode);
-        // Direct buffer relay to other peers in room
-        broadcastToRoom(room, message, ws);
+        broadcastToRoom(room, rawText, ws);
+      }
+
+      // 5.5 HOST-AUTHORITATIVE AI CAR TRANSFORMS (~20Hz relay)
+      else if (data.type === 'AI_TRANSFORMS') {
+        if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
+        const room = rooms.get(currentRoomCode);
+        const player = room.members.get(ws);
+        if (player && player.id === room.hostId) {
+          broadcastToRoom(room, rawText, ws);
+        }
       }
 
       // 6. CHAT / REACTIONS
       else if (data.type === 'CHAT') {
         if (!currentRoomCode || !rooms.has(currentRoomCode)) return;
         const room = rooms.get(currentRoomCode);
-        broadcastToRoom(room, message, ws);
+        broadcastToRoom(room, rawText, ws);
       }
 
       // 7. LEAVE ROOM
