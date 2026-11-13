@@ -375,9 +375,11 @@ export class Car {
         this.isHittingBarrier = false;
       }
 
-      // Ground plane clamping: tires rest firmly on the road surface
+      // Ground plane clamping: tires rest firmly on the road surface & follow hills
       const targetY = closest.point.y + 0.05;
-      this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, delta * 16);
+      this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, Math.min(1, delta * 24));
+      const dotFwd = forward.x * closest.tangent.x + forward.z * closest.tangent.z;
+      this.roadSlopePitch = -(closest.slope || 0) * dotFwd;
 
       // Boost pads check
       if (track.boostPads && track.boostPads.length > 0) {
@@ -411,8 +413,9 @@ export class Car {
       : -this.steeringAngle * 0.08 * (Math.abs(this.speed) / 30);
     this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, delta * 8);
 
-    const targetPitch = (this.inputs.throttle > 0 ? -0.04 : (this.inputs.throttle < 0 ? 0.06 : 0));
-    this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, delta * 8);
+    const accelPitch = (this.inputs.throttle > 0 ? -0.04 : (this.inputs.throttle < 0 ? 0.06 : 0));
+    const targetPitch = (this.roadSlopePitch || 0) + accelPitch;
+    this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch, Math.min(1, delta * 10));
 
     this.model.rotation.set(this.pitch, this.rotationY, this.roll, 'YXZ');
 

@@ -302,7 +302,8 @@ export class Game {
       .addScaledVector(tangent, longitudinalOffset)
       .addScaledVector(normal, lateralOffset);
 
-    car.position.set(pos.x, 0.05, pos.z);
+    car.position.set(pos.x, pos.y + 0.05, pos.z);
+    car.roadSlopePitch = 0;
     car.rotationY = Math.atan2(tangent.x, tangent.z);
     if (car.model) {
       car.model.position.copy(car.position);
@@ -2089,6 +2090,14 @@ export class Game {
       while (rotDiff < -Math.PI) rotDiff += Math.PI * 2;
       while (rotDiff > Math.PI) rotDiff -= Math.PI * 2;
       remote.car.rotationY += rotDiff * Math.min(1, delta * 24);
+
+      if (this.track) {
+        const rc = this.track.getClosest(remote.car.position, remote.car.sampleIndexHint ?? -1);
+        remote.car.sampleIndexHint = rc.index;
+        const fwdX = Math.sin(remote.car.rotationY);
+        const fwdZ = Math.cos(remote.car.rotationY);
+        remote.car.roadSlopePitch = -(rc.slope || 0) * (fwdX * rc.tangent.x + fwdZ * rc.tangent.z);
+      }
 
       remote.car.updateVisuals(delta);
 

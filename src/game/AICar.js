@@ -38,15 +38,47 @@ export class AICar extends Car {
     this.sampleIndexHint = closest.index;
     this.currentT = closest.t;
 
-    // Dynamic Lookahead scaling with speed
-    const lookAhead = 0.026 + Math.min(0.042, (Math.abs(this.speed) / 55) * 0.035);
+    const trackLen = Math.max(400, track.trackLength || 1500);
+    const halfW = (track.trackWidth || 18) * 0.5;
+    const safeMargin = Math.max(4.0, halfW - 2.3);
+    const lateralPos =
+      (this.position.x - closest.point.x) * closest.normal.x +
+      (this.position.z - closest.point.z) * closest.normal.z;
+
+    // Sample upcoming curvature in meters so speed & steering anticipate corners consistently across track lengths
+    const idx12 = track.indexFromT((closest.t + 12 / trackLen) % 1);
+    const idx28 = track.indexFromT((closest.t + 28 / trackLen) % 1);
+    const idx48 = track.indexFromT((closest.t + 48 / trackLen) % 1);
+    const upcomingCurv = Math.max(
+      Math.abs(track.sampleCurv[idx12] || 0),
+      Math.abs(track.sampleCurv[idx28] || 0),
+      Math.abs(track.sampleCurv[idx48] || 0) * 0.85
+    );
+
+    const wallRatio = Math.abs(lateralPos) / safeMargin;
+    const nearWall = this.isHittingBarrier || wallRatio > 0.72;
+
+    // Pull racing line decisively away from barrier walls and tighten lookahead during recovery
+    let desiredLane = THREE.MathUtils.clamp(this.laneOffset, -safeMargin * 0.65, safeMargin * 0.65);
+    if (nearWall) {
+      const pullStrength = this.isHittingBarrier
+        ? 0.95
+        : THREE.MathUtils.clamp((wallRatio - 0.72) / 0.35, 0, 0.95);
+      const safeInsideOffset = -Math.sign(lateralPos || 1) * Math.min(3.5, safeMargin * 0.45);
+      desiredLane = THREE.MathUtils.lerp(desiredLane, safeInsideOffset, pullStrength);
+    }
+
+    const baseLookMeters = nearWall || Math.abs(this.speed) < 16
+      ? THREE.MathUtils.clamp(13 + Math.abs(this.speed) * 0.25, 12, 22)
+      : THREE.MathUtils.clamp(15 + Math.abs(this.speed) * 0.44 - upcomingCurv * 650, 14, 34);
+    const lookAhead = baseLookMeters / trackLen;
     const targetT = (closest.t + lookAhead) % 1;
     const targetIdx = track.indexFromT(targetT);
     const centerTarget = track.samplePos[targetIdx];
     const normal = track.sampleNorm[targetIdx];
 
-    const targetPoint = centerTarget.clone().addScaledVector(normal, this.laneOffset);
-    targetPoint.y = 0.05;
+    const targetPoint = centerTarget.clone().addScaledVector(normal, desiredLane);
+    targetPoint.y = centerTarget.y + 0.05;
 
     // Heading calculation
     const toTarget = new THREE.Vector3().subVectors(targetPoint, this.position);
@@ -59,33 +91,41 @@ export class AICar extends Car {
     const dot = currentHeading.dot(targetHeading);
     const angleDiff = Math.atan2(cross.y, dot);
 
-    // Steer towards target point
-    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * 2.5, -1, 1);
+    // Stronger steering response on wall recovery & apex entries
+    const steerGain = nearWall ? 4.2 : 3.1;
+    this.inputs.steer = THREE.MathUtils.clamp(angleDiff * steerGain, -1, 1);
 
-    // Speed / Throttle control (AI เลี้ยงความเร็วตามความโค้งของแทร็ก)
-    const trackCurv = Math.abs(track.sampleCurv[targetIdx] || 0);
-    const turnSeverity = Math.max(Math.abs(angleDiff), trackCurv * 35);
+    // Speed / Throttle control (AI เลี้ยงความเร็วตามความโค้งของแทร็กข้างหน้า)
+    const trackCurv = Math.max(Math.abs(track.sampleCurv[targetIdx] || 0), upcomingCurv);
+    const turnSeverity = Math.max(Math.abs(angleDiff), trackCurv * 40);
 
     const baseTrackMul = track.def?.aiSpeedMul || 1.0;
     const effectiveSkill = this.skill * this.aiDifficultyMul * baseTrackMul;
 
-    if (turnSeverity > 0.45) {
+    if (nearWall && Math.abs(angleDiff) > 0.28) {
+      // Moderate speed briefly while turning cleanly off a barrier
+      this.inputs.throttle = 0.65 * effectiveSkill;
+      this.inputs.drift = false;
+      this.inputs.boost = false;
+    } else if (turnSeverity > 0.45) {
       // Sharp corner: AI lifts off throttle to feather speed into the apex
-      this.inputs.throttle = 0.25 * effectiveSkill;
+      this.inputs.throttle = 0.28 * effectiveSkill;
+      this.inputs.boost = false;
       if (this.speed > 22 && Math.random() < 0.2) {
         this.inputs.drift = true;
       }
     } else if (turnSeverity > 0.22) {
       // Medium corner: partial throttle
-      this.inputs.throttle = 0.65 * effectiveSkill;
+      this.inputs.throttle = 0.68 * effectiveSkill;
       this.inputs.drift = false;
+      this.inputs.boost = false;
     } else {
       // Straightaway: full gas
       this.inputs.throttle = 1.0 * effectiveSkill;
       this.inputs.drift = false;
 
-      // Smart boost on straightaways
-      if (turnSeverity < 0.12 && this.nitroFuel > 40 && Math.random() < 0.02) {
+      // Smart boost on genuine straightaways (never right before a sharp turn)
+      if (turnSeverity < 0.12 && upcomingCurv < 0.0025 && this.nitroFuel > 40 && Math.random() < 0.02) {
         this.inputs.boost = true;
       } else {
         this.inputs.boost = false;

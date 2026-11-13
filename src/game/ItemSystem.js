@@ -92,7 +92,7 @@ export class ItemSystem {
 
       offsets.forEach(offset => {
         const pos = centerPt.clone().addScaledVector(normal, offset);
-        pos.y = 1.1;
+        pos.y = centerPt.y + 1.1;
 
         const mesh = new THREE.Mesh(boxGeo, boxMat);
         mesh.position.copy(pos);
@@ -176,8 +176,14 @@ export class ItemSystem {
         continue;
       }
 
-      // Guided flight along missile velocity
+      // Guided flight following 3D track elevation
       m.pos.addScaledVector(m.velocity, delta);
+      if (this.track) {
+        const mc = this.track.getClosest(m.pos, m.sampleIndexHint ?? -1);
+        m.sampleIndexHint = mc.index;
+        m.pos.y = mc.point.y + 0.5;
+        m.mesh.rotation.x = -(mc.slope || 0);
+      }
       m.mesh.position.copy(m.pos);
 
       // Hit player
@@ -263,9 +269,9 @@ export class ItemSystem {
   }
 
   dropBanana(car) {
-    const behind = new THREE.Vector3(0, 0.2, -2.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotationY);
+    const behind = new THREE.Vector3(0, 0, -2.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.rotationY);
     const pos = car.position.clone().add(behind);
-    pos.y = 0.25;
+    pos.y = car.position.y + 0.2;
 
     const geo = new THREE.ConeGeometry(0.35, 0.65, 8);
     geo.rotateZ(Math.PI / 4);
@@ -305,6 +311,7 @@ export class ItemSystem {
       pos,
       velocity: forward.clone().multiplyScalar(68),
       owner: car,
+      sampleIndexHint: car.sampleIndexHint ?? -1,
       life: 4.0
     });
   }

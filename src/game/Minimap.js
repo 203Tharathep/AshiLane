@@ -63,6 +63,9 @@ export class Minimap {
     ctx.lineWidth = 6;
     this.drawPath(ctx);
 
+    // Highlight elevated bridge / overpass segments cleanly on top
+    this.drawElevatedOverpasses(ctx);
+
     // Start / Finish marker
     const startPt = this.track.samplePos[0];
     if (startPt) {
@@ -130,5 +133,35 @@ export class Minimap {
     }
     ctx.closePath();
     ctx.stroke();
+  }
+
+  drawElevatedOverpasses(ctx) {
+    if (!this.track || !this.track.samplePos) return;
+    const N = this.track.sampleCount;
+    const stride = Math.max(1, Math.floor(N / 120));
+    const accent = this.track.theme?.railB ? `#${this.track.theme.railB.toString(16).padStart(6, '0')}` : '#00f3ff';
+    const drawBridges = (strokeStyle, lineWidth) => {
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      let drawing = false;
+      for (let i = 0; i <= N; i += stride) {
+        const pt = this.track.samplePos[i % N];
+        if ((pt.y || 0) > 8.5) {
+          const m = this.worldToMap(pt.x, pt.z);
+          if (!drawing) {
+            ctx.moveTo(m.x, m.y);
+            drawing = true;
+          } else {
+            ctx.lineTo(m.x, m.y);
+          }
+        } else {
+          drawing = false;
+        }
+      }
+      ctx.stroke();
+    };
+    drawBridges('#090e1c', 12);
+    drawBridges(accent, 6);
   }
 }

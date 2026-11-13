@@ -38,8 +38,11 @@ export class Track {
     this.buildRoadMesh();
     this.buildKerbs();
     this.buildCrashBarriers();
+    this.buildViaductStructure();
     this.buildStartFinishLine();
     this.buildBrakeDistanceMarkers();
+    this.buildCornerChevrons();
+    this.buildSectorPortals();
     this.buildTireBarriers();
     this.buildCheckpoints();
     this.buildBoostPads();
@@ -49,31 +52,48 @@ export class Track {
   // Geometry helpers
   // ------------------------------------------------------------------
   initSpline() {
-    const pts = this.def.points.map(([x, z]) => new THREE.Vector3(x, 0, z));
+    const pts = this.def.points.map(pt =>
+      pt.length >= 3 ? new THREE.Vector3(pt[0], pt[1], pt[2]) : new THREE.Vector3(pt[0], 0, pt[1])
+    );
     this.spline = new THREE.CatmullRomCurve3(pts, true, 'centripetal', 0.5);
     this.spline.arcLengthDivisions = 3000;
     this.trackLength = this.spline.getLength();
   }
 
   buildSamples() {
-    const N = Math.max(400, Math.ceil(this.trackLength / 2));
+    const N = Math.max(400, Math.ceil(this.trackLength / 2.5));
     this.sampleCount = N;
     this.sampleSpacing = this.trackLength / N;
     this.samplePos = new Array(N);
     this.sampleTan = new Array(N);
+    this.sampleTan3D = new Array(N);
     this.sampleNorm = new Array(N);
+    this.sampleSlope = new Float32Array(N);
     this.sampleCurv = new Float32Array(N); // signed rad / metre (+ = turning left / towards +normal)
 
     for (let i = 0; i < N; i++) {
       const t = i / N;
       const p = this.spline.getPointAt(t);
-      p.y = 0;
-      const tan = this.spline.getTangentAt(t);
-      tan.y = 0;
-      tan.normalize();
+      p.y = Math.max(0, p.y);
+      const tan3D = this.spline.getTangentAt(t).normalize();
+      const tan = new THREE.Vector3(tan3D.x, 0, tan3D.z).normalize();
       this.samplePos[i] = p;
       this.sampleTan[i] = tan;
+      this.sampleTan3D[i] = tan3D;
       this.sampleNorm[i] = new THREE.Vector3().crossVectors(UP, tan).normalize();
+    }
+
+    for (let i = 0; i < N; i++) {
+      const pPrev = this.samplePos[(i - 2 + N) % N];
+      const pNext = this.samplePos[(i + 2) % N];
+      const xzSpan = Math.max(0.01, Math.hypot(pNext.x - pPrev.x, pNext.z - pPrev.z));
+      const slope = Math.atan2(pNext.y - pPrev.y, xzSpan);
+      this.sampleSlope[i] = slope;
+      this.sampleTan3D[i].set(
+        this.sampleTan[i].x * Math.cos(slope),
+        Math.sin(slope),
+        this.sampleTan[i].z * Math.cos(slope)
+      ).normalize();
     }
 
     // Signed curvature using a +-3 sample window, then smoothed
@@ -119,12 +139,13 @@ export class Track {
     let bestD = Infinity;
 
     if (hint >= 0) {
-      const W = 36;
+      const W = 38;
       for (let k = -W; k <= W; k++) {
         const i = (hint + k + N) % N;
         const dx = pos.x - P[i].x;
         const dz = pos.z - P[i].z;
-        const d = dx * dx + dz * dz;
+        const dy = pos.y - P[i].y;
+        const d = dx * dx + dz * dz + dy * dy * 2.5;
         if (d < bestD) { bestD = d; best = i; }
       }
       const limit = this.trackWidth * 2.5;
@@ -136,7 +157,8 @@ export class Track {
       for (let i = 0; i < N; i++) {
         const dx = pos.x - P[i].x;
         const dz = pos.z - P[i].z;
-        const d = dx * dx + dz * dz;
+        const dy = pos.y - P[i].y;
+        const d = dx * dx + dz * dz + dy * dy * 3.5;
         if (d < bestD) { bestD = d; best = i; }
       }
     }
@@ -150,11 +172,19 @@ export class Track {
     }
     frac = Math.min(1, Math.max(0, frac));
 
+    const nextBase = (base + 1) % N;
     const a = P[base];
-    const b = P[(base + 1) % N];
-    const point = new THREE.Vector3(a.x + (b.x - a.x) * frac, 0, a.z + (b.z - a.z) * frac);
+    const b = P[nextBase];
+    const point = new THREE.Vector3(
+      a.x + (b.x - a.x) * frac,
+      a.y + (b.y - a.y) * frac,
+      a.z + (b.z - a.z) * frac
+    );
     const tangent = this.sampleTan[best];
     const normal = this.sampleNorm[best];
+    const slope = this.sampleSlope
+      ? this.sampleSlope[base] + (this.sampleSlope[nextBase] - this.sampleSlope[base]) * frac
+      : 0;
     const dx = pos.x - point.x;
     const dz = pos.z - point.z;
     const lateral = dx * normal.x + dz * normal.z;
@@ -165,6 +195,7 @@ export class Track {
       point,
       tangent,
       normal,
+      slope,
       lateral,
       distance: Math.sqrt(dx * dx + dz * dz)
     };
@@ -188,8 +219,25 @@ export class Track {
     const i = this.indexFromT(t);
     const tan = this.sampleTan[i];
     const pos = this.samplePos[i].clone().addScaledVector(this.sampleNorm[i], lateral);
-    pos.y = 0.05;
-    return { position: pos, rotationY: Math.atan2(tan.x, tan.z), index: i };
+    pos.y += 0.05;
+    return { position: pos, rotationY: Math.atan2(tan.x, tan.z), slope: this.sampleSlope ? this.sampleSlope[i] : 0, index: i };
+  }
+
+  /** Returns true if a non-adjacent track section passes within `radius` in XZ plane. */
+  hasOtherSectionNear(sampleIdx, radius = 20) {
+    const N = this.sampleCount;
+    const p = this.samplePos[sampleIdx];
+    const r2 = radius * radius;
+    const minArcSamples = Math.max(20, Math.round(55 / this.sampleSpacing));
+    for (let j = 0; j < N; j += 2) {
+      const arcDiff = Math.abs(j - sampleIdx);
+      const wrapArc = Math.min(arcDiff, N - arcDiff);
+      if (wrapArc < minArcSamples) continue;
+      const dx = this.samplePos[j].x - p.x;
+      const dz = this.samplePos[j].z - p.z;
+      if (dx * dx + dz * dz < r2) return true;
+    }
+    return false;
   }
 
   /** Planar distance from (x, z) to the centre line (coarse, used at build time). */
@@ -240,11 +288,11 @@ export class Track {
       if (vertical) {
         const x = p.x + n.x * innerOffset;
         const z = p.z + n.z * innerOffset;
-        verts.push(x, y0, z, x, y1, z);
+        verts.push(x, p.y + y0, z, x, p.y + y1, z);
         uvs.push(v, 0, v, 1);
       } else {
-        verts.push(p.x + n.x * innerOffset, y0, p.z + n.z * innerOffset);
-        verts.push(p.x + n.x * outerOffset, y1, p.z + n.z * outerOffset);
+        verts.push(p.x + n.x * innerOffset, p.y + y0, p.z + n.z * innerOffset);
+        verts.push(p.x + n.x * outerOffset, p.y + y1, p.z + n.z * outerOffset);
         uvs.push(0, v, 1, v);
       }
 
@@ -500,25 +548,25 @@ export class Track {
       const capMax = Math.max(offset, outerOffset);
       const wallTop = this.buildStrip(capMin, capMax, this.wallHeight, this.wallHeight, 8, capMat, false);
 
-      [wallIn, wallOut, wallTop].forEach(w => {
-        w.castShadow = true;
-        w.receiveShadow = true;
-      });
+      wallIn.castShadow = true;
+      wallIn.receiveShadow = true;
+      wallOut.receiveShadow = true;
+      wallTop.receiveShadow = true;
 
       // Glowing neon top rail + soft additive glow sleeve
       const railPts = [];
-      for (let i = 0; i < this.sampleCount; i += 2) {
+      for (let i = 0; i < this.sampleCount; i += 4) {
         const p = this.samplePos[i];
         const n = this.sampleNorm[i];
-        railPts.push(new THREE.Vector3(p.x + n.x * (offset + outSign * 0.05), this.wallHeight + 0.06, p.z + n.z * (offset + outSign * 0.05)));
+        railPts.push(new THREE.Vector3(p.x + n.x * (offset + outSign * 0.05), p.y + this.wallHeight + 0.06, p.z + n.z * (offset + outSign * 0.05)));
       }
       const railCurve = new THREE.CatmullRomCurve3(railPts, true);
       const railCol = sideIdx === 0 ? (this.theme.railA ?? 0xff0055) : (this.theme.railB ?? 0x00f3ff);
-      const railGeo = new THREE.TubeGeometry(railCurve, Math.min(1200, railPts.length), 0.075, 5, true);
+      const railGeo = new THREE.TubeGeometry(railCurve, Math.min(360, railPts.length), 0.075, 4, true);
       const railMat = new THREE.MeshBasicMaterial({ color: railCol });
       this.group.add(new THREE.Mesh(railGeo, railMat));
 
-      const haloGeo = new THREE.TubeGeometry(railCurve, Math.min(900, railPts.length), 0.16, 5, true);
+      const haloGeo = new THREE.TubeGeometry(railCurve, Math.min(300, railPts.length), 0.16, 4, true);
       const haloMat = new THREE.MeshBasicMaterial({
         color: railCol,
         transparent: true,
@@ -535,6 +583,7 @@ export class Track {
         const midOff = offset + outSign * (wallThickness * 0.55);
         postTransforms.push({
           x: p.x + n.x * midOff,
+          y: p.y,
           z: p.z + n.z * midOff,
           tan
         });
@@ -553,12 +602,227 @@ export class Track {
       const pos = new THREE.Vector3();
       postTransforms.forEach((pt, idx) => {
         q.setFromUnitVectors(Z_AXIS, pt.tan);
-        pos.set(pt.x, (this.wallHeight + 0.24) * 0.5, pt.z);
+        pos.set(pt.x, pt.y + (this.wallHeight + 0.24) * 0.5, pt.z);
         m.compose(pos, q, s);
         posts.setMatrixAt(idx, m);
       });
       this.group.add(posts);
     }
+  }
+
+  /**
+   * Builds solid structural box-girder road decks, side skirts, under-deck neon strips,
+   * and concrete/steel twin support piers along elevated sections (`y > 0.45m`).
+   */
+  buildViaductStructure() {
+    const N = this.sampleCount;
+    const half = this.trackWidth / 2;
+    const outerX = half + 0.44;
+    const bellyX = half * 0.68;
+    const girderDepth = 1.25;
+
+    const girderMat = new THREE.MeshStandardMaterial({
+      color: this.def.id === 'volcano' ? 0x2a1c1a : this.def.id === 'snow' ? 0x4b5c74 : 0x262d3d,
+      roughness: 0.65,
+      metalness: 0.35,
+      side: THREE.DoubleSide
+    });
+    const pierMat = new THREE.MeshStandardMaterial({
+      color: this.def.id === 'volcano' ? 0x241716 : 0x353e52,
+      roughness: 0.72,
+      metalness: 0.25
+    });
+    const underNeonMat = new THREE.MeshBasicMaterial({ color: this.theme.railB ?? 0x00f3ff });
+
+    // Extract contiguous spans where road height > 0.35m
+    const spans = [];
+    let cur = null;
+    for (let i = 0; i < N; i++) {
+      if (this.samplePos[i].y > 0.35) {
+        if (!cur) cur = [i, i];
+        else cur[1] = i;
+      } else if (cur) {
+        spans.push(cur);
+        cur = null;
+      }
+    }
+    if (cur) spans.push(cur);
+
+    const pierPlacements = [];
+    const pierStride = Math.max(10, Math.round(28 / this.sampleSpacing));
+
+    spans.forEach(([s0, s1]) => {
+      // Extend 1 sample past each end to blend cleanly into terrain
+      const start = Math.max(0, s0 - 1);
+      const end = Math.min(N - 1, s1 + 1);
+      const verts = [];
+      const indices = [];
+      const count = end - start + 1;
+      for (let k = 0; k < count; k++) {
+        const i = (start + k) % N;
+        const p = this.samplePos[i];
+        const n = this.sampleNorm[i];
+        const topY = p.y + 0.02;
+        const botY = Math.max(-0.4, p.y - girderDepth);
+        // 4 cross-section points: top-left, bottom-left belly, bottom-right belly, top-right
+        verts.push(
+          p.x - n.x * outerX, topY, p.z - n.z * outerX,
+          p.x - n.x * bellyX, botY, p.z - n.z * bellyX,
+          p.x + n.x * bellyX, botY, p.z + n.z * bellyX,
+          p.x + n.x * outerX, topY, p.z + n.z * outerX
+        );
+        if (k < count - 1) {
+          const b = k * 4;
+          const nb = (k + 1) * 4;
+          // Left haunch wall, bottom soffit, right haunch wall
+          indices.push(
+            b, b + 1, nb, b + 1, nb + 1, nb,
+            b + 1, b + 2, nb + 1, b + 2, nb + 2, nb + 1,
+            b + 2, b + 3, nb + 2, b + 3, nb + 3, nb + 2
+          );
+        }
+      }
+      const girderGeo = new THREE.BufferGeometry();
+      girderGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      girderGeo.setIndex(indices);
+      girderGeo.computeVertexNormals();
+      const girderMesh = new THREE.Mesh(girderGeo, girderMat);
+      girderMesh.castShadow = true;
+      girderMesh.receiveShadow = true;
+      this.group.add(girderMesh);
+
+      // Under-bridge glowing neon accent trim along both outer belly edges (when elevated enough)
+      const highPtsL = [];
+      const highPtsR = [];
+      for (let i = s0; i <= s1; i += 2) {
+        const p = this.samplePos[i];
+        if (p.y > 2.2) {
+          const n = this.sampleNorm[i];
+          highPtsL.push(new THREE.Vector3(p.x - n.x * (bellyX + 0.25), p.y - girderDepth + 0.15, p.z - n.z * (bellyX + 0.25)));
+          highPtsR.push(new THREE.Vector3(p.x + n.x * (bellyX + 0.25), p.y - girderDepth + 0.15, p.z + n.z * (bellyX + 0.25)));
+        }
+      }
+      [highPtsL, highPtsR].forEach(pts => {
+        if (pts.length >= 3) {
+          const curve = new THREE.CatmullRomCurve3(pts, false);
+          this.group.add(new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 2, 0.11, 4, false), underNeonMat));
+        }
+      });
+
+      // Collect clean support pier columns (never intersecting a lower track deck!)
+      for (let i = s0 + 2; i <= s1 - 2; i += pierStride) {
+        const p = this.samplePos[i];
+        if (p.y < 1.8) continue;
+        if (this.hasOtherSectionNear(i, half + 7.5)) continue;
+        pierPlacements.push(i);
+      }
+    });
+
+    if (pierPlacements.length) {
+      const capGeo = new THREE.BoxGeometry(this.trackWidth * 0.78, 0.9, 1.5);
+      const colGeo = new THREE.BoxGeometry(1.4, 1, 1.4);
+      const caps = new THREE.InstancedMesh(capGeo, pierMat, pierPlacements.length);
+      const cols = new THREE.InstancedMesh(colGeo, pierMat, pierPlacements.length * 2);
+      caps.castShadow = true;
+      caps.receiveShadow = true;
+      cols.castShadow = true;
+      cols.receiveShadow = true;
+
+      const m = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const s = new THREE.Vector3();
+      const pos = new THREE.Vector3();
+      const colOffset = half * 0.48;
+
+      pierPlacements.forEach((idx, k) => {
+        const p = this.samplePos[idx];
+        const n = this.sampleNorm[idx];
+        const tan = this.sampleTan[idx];
+        q.setFromUnitVectors(Z_AXIS, tan);
+
+        const capY = p.y - girderDepth - 0.35;
+        pos.set(p.x, capY, p.z);
+        s.set(1, 1, 1);
+        m.compose(pos, q, s);
+        caps.setMatrixAt(k, m);
+
+        const colH = Math.max(1.5, capY + 1.2);
+        [-colOffset, colOffset].forEach((lat, side) => {
+          pos.set(p.x + n.x * lat, colH * 0.5 - 1.0, p.z + n.z * lat);
+          s.set(1, colH, 1);
+          m.compose(pos, q, s);
+          cols.setMatrixAt(k * 2 + side, m);
+        });
+      });
+      this.group.add(caps, cols);
+    }
+  }
+
+  /**
+   * Overhead illuminated timing portals at Sector 2 & Sector 3 checkpoints.
+   */
+  buildSectorPortals() {
+    const half = this.trackWidth / 2 + 1.1;
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x202634, metalness: 0.85, roughness: 0.25 });
+    const trimMat = new THREE.MeshBasicMaterial({ color: this.theme.railB ?? 0x00f3ff });
+    const tunnelRange = this.def.tunnel;
+
+    [
+      { baseT: 0.34, label: 'SECTOR 2' },
+      { baseT: 0.67, label: 'SECTOR 3' }
+    ].forEach(({ baseT, label }) => {
+      let t = baseT;
+      if (tunnelRange && t >= tunnelRange[0] - 0.04 && t <= tunnelRange[1] + 0.04) {
+        t = (tunnelRange[1] + 0.06) % 1;
+      }
+      const idx = this.indexFromT(t);
+      if (this.hasOtherSectionNear(idx, half + 6)) return;
+
+      const p = this.samplePos[idx];
+      const tan = this.sampleTan[idx];
+      const n = this.sampleNorm[idx];
+      const gate = new THREE.Group();
+      gate.position.set(p.x, p.y, p.z);
+      gate.quaternion.setFromUnitVectors(Z_AXIS, tan);
+
+      const colGeo = new THREE.CylinderGeometry(0.28, 0.36, 9.6, 8);
+      const colL = new THREE.Mesh(colGeo, poleMat);
+      colL.position.set(-half, 4.8, 0);
+      const colR = new THREE.Mesh(colGeo, poleMat);
+      colR.position.set(half, 4.8, 0);
+      colL.castShadow = true;
+      colR.castShadow = true;
+
+      const span = half * 2 + 1.2;
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(span, 0.75, 0.9), poleMat);
+      beam.position.set(0, 9.5, 0);
+      beam.castShadow = true;
+
+      const glowStrip = new THREE.Mesh(new THREE.BoxGeometry(span * 0.96, 0.16, 1.0), trimMat);
+      glowStrip.position.set(0, 9.1, 0);
+
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 96;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#0b101d';
+      ctx.fillRect(0, 0, 512, 96);
+      ctx.strokeStyle = this.theme.railB ? `#${this.theme.railB.toString(16).padStart(6, '0')}` : '#00f3ff';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(4, 4, 504, 88);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 34px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${label}  //  ${this.def.name.toUpperCase()}`, 256, 48);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(14, this.roadWidth * 0.78), 2.1), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+      sign.position.set(0, 10.7, 0);
+
+      gate.add(colL, colR, beam, glowStrip, sign);
+      this.group.add(gate);
+    });
   }
 
   buildStartFinishLine() {
@@ -826,18 +1090,107 @@ export class Track {
         const q = new THREE.Quaternion().setFromUnitVectors(Z_AXIS, tan.clone().negate());
 
         const board = new THREE.Mesh(boardGeo, new THREE.MeshStandardMaterial({ map: texCache[distM] }));
-        board.position.set(bx, 1.85, bz);
+        board.position.set(bx, p.y + 1.85, bz);
         board.quaternion.copy(q);
         board.castShadow = true;
         board.receiveShadow = true;
 
         const post = new THREE.Mesh(poleGeo, poleMat);
-        post.position.set(bx, 0.9, bz);
+        post.position.set(bx, p.y + 0.9, bz);
         post.castShadow = true;
 
         this.group.add(board, post);
       });
     });
+  }
+
+  buildCornerChevrons() {
+    const corners = this.findCorners(7, 0.014);
+    if (!corners.length) return;
+    const half = this.trackWidth / 2;
+
+    // Group left-turn vs right-turn illuminated chevron canvas texture (reused across all posts)
+    const makeChevronTex = (dir) => {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 96;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#111622';
+      ctx.fillRect(0, 0, 128, 96);
+      const accent = this.theme.railB ? `#${this.theme.railB.toString(16).padStart(6, '0')}` : '#ffdd00';
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(3, 3, 122, 90);
+      ctx.fillStyle = '#ffd500';
+      ctx.beginPath();
+      const s = dir >= 0 ? 1 : -1;
+      for (const cx of [38, 78]) {
+        ctx.moveTo(cx - 16 * s, 18);
+        ctx.lineTo(cx + 16 * s, 48);
+        ctx.lineTo(cx - 16 * s, 78);
+        ctx.lineTo(cx - 2 * s, 78);
+        ctx.lineTo(cx + 28 * s, 48);
+        ctx.lineTo(cx - 2 * s, 18);
+      }
+      ctx.closePath();
+      ctx.fill();
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    };
+
+    const texRight = makeChevronTex(1);
+    const texLeft = makeChevronTex(-1);
+    const matRight = new THREE.MeshBasicMaterial({ map: texRight });
+    const matLeft = new THREE.MeshBasicMaterial({ map: texLeft });
+    const backMat = new THREE.MeshStandardMaterial({ color: 0x222836, metalness: 0.7, roughness: 0.35 });
+    const boardGeo = new THREE.BoxGeometry(2.1, 1.35, 0.16);
+    const legGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.85, 6);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x4b5568, metalness: 0.8, roughness: 0.25 });
+
+    const leftBoards = [];
+    const rightBoards = [];
+    const allLegs = [];
+
+    corners.forEach(corner => {
+      const turnSign = Math.sign(corner.curv) || 1;
+      const outsideSign = -turnSign;
+      const list = turnSign > 0 ? leftBoards : rightBoards;
+      for (let s = -2; s <= 2; s++) {
+        const idx = this.wrapIndex(corner.index + s * (7 / this.sampleSpacing));
+        if (this.hasOtherSectionNear(idx, half + 6)) continue;
+        const p = this.samplePos[idx];
+        const n = this.sampleNorm[idx];
+        const bx = p.x + n.x * outsideSign * (half + 2.0);
+        const bz = p.z + n.z * outsideSign * (half + 2.0);
+        const faceDir = this.sampleTan[idx].clone().negate();
+        const item = { bx, y: p.y, bz, faceDir };
+        list.push(item);
+        allLegs.push(item);
+      }
+    });
+
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3(1, 1, 1);
+    const pos = new THREE.Vector3();
+
+    const addInst = (items, geo, mat, yOff, rotateFace) => {
+      if (!items.length) return;
+      const inst = new THREE.InstancedMesh(geo, mat, items.length);
+      items.forEach((it, k) => {
+        if (rotateFace) q.setFromUnitVectors(Z_AXIS, it.faceDir);
+        else q.identity();
+        pos.set(it.bx, it.y + yOff, it.bz);
+        m.compose(pos, q, s);
+        inst.setMatrixAt(k, m);
+      });
+      this.group.add(inst);
+    };
+
+    addInst(leftBoards, boardGeo, [backMat, backMat, backMat, backMat, matLeft, backMat], 1.95, true);
+    addInst(rightBoards, boardGeo, [backMat, backMat, backMat, backMat, matRight, backMat], 1.95, true);
+    addInst(allLegs, legGeo, legMat, 0.92, false);
   }
 
   buildTireBarriers() {
@@ -848,22 +1201,39 @@ export class Track {
     tireGeo.rotateX(Math.PI / 2);
     const half = this.trackWidth / 2;
 
+    const darkPos = [];
+    const redPos = [];
+    const whitePos = [];
+
     this.brakeZones.forEach(corner => {
       const outsideSign = -Math.sign(corner.curv) || 1;
       for (let s = -3; s <= 3; s++) {
         const i = this.wrapIndex(corner.index + s * (4 / this.sampleSpacing));
+        if (this.hasOtherSectionNear(i, half + 5)) continue;
         const p = this.samplePos[i];
         const n = this.sampleNorm[i];
-        const base = new THREE.Vector3(p.x + n.x * outsideSign * (half + 1.15), 0, p.z + n.z * outsideSign * (half + 1.15));
-        const stackMat = (s + 3) % 2 === 0 ? tireMatRed : tireMatWhite;
+        const bx = p.x + n.x * outsideSign * (half + 1.15);
+        const bz = p.z + n.z * outsideSign * (half + 1.15);
+        const midList = (s + 3) % 2 === 0 ? redPos : whitePos;
         for (let row = 0; row < 3; row++) {
-          const tire = new THREE.Mesh(tireGeo, row === 1 ? stackMat : tireMatDark);
-          tire.position.set(base.x, 0.17 + row * 0.32, base.z);
-          tire.castShadow = true;
-          tire.receiveShadow = true;
-          this.group.add(tire);
+          (row === 1 ? midList : darkPos).push(new THREE.Vector3(bx, p.y + 0.17 + row * 0.32, bz));
         }
       }
+    });
+
+    const m = new THREE.Matrix4();
+    [
+      [darkPos, tireMatDark],
+      [redPos, tireMatRed],
+      [whitePos, tireMatWhite]
+    ].forEach(([pts, mat]) => {
+      if (!pts.length) return;
+      const inst = new THREE.InstancedMesh(tireGeo, mat, pts.length);
+      pts.forEach((pt, k) => {
+        m.makeTranslation(pt.x, pt.y, pt.z);
+        inst.setMatrixAt(k, m);
+      });
+      this.group.add(inst);
     });
   }
 
@@ -923,19 +1293,21 @@ export class Track {
       const i = this.indexFromT(t);
       const lateral = (k % 3 - 1) * (this.roadWidth * 0.22);
       const p = this.samplePos[i].clone().addScaledVector(this.sampleNorm[i], lateral);
+      const slopeTan = this.sampleTan3D ? this.sampleTan3D[i] : this.sampleTan[i];
+      const qPad = new THREE.Quaternion().setFromUnitVectors(Z_AXIS, slopeTan);
       const mesh = new THREE.Mesh(padGeo, padMat);
-      mesh.quaternion.setFromUnitVectors(Z_AXIS, this.sampleTan[i]);
-      mesh.position.set(p.x, 0.09, p.z);
+      mesh.quaternion.copy(qPad);
+      mesh.position.set(p.x, p.y + 0.11, p.z);
       this.group.add(mesh);
 
       [-3.1, 3.1].forEach(sideOff => {
         const bezel = new THREE.Mesh(railGeo, railMat);
-        bezel.position.set(p.x + this.sampleNorm[i].x * sideOff, 0.09, p.z + this.sampleNorm[i].z * sideOff);
-        bezel.quaternion.setFromUnitVectors(Z_AXIS, this.sampleTan[i]);
+        bezel.position.set(p.x + this.sampleNorm[i].x * sideOff, p.y + 0.11, p.z + this.sampleNorm[i].z * sideOff);
+        bezel.quaternion.copy(qPad);
         this.group.add(bezel);
       });
 
-      this.boostPads.push({ mesh, position: new THREE.Vector3(p.x, 0.35, p.z), tangent: this.sampleTan[i], radius: 4.2 });
+      this.boostPads.push({ mesh, position: new THREE.Vector3(p.x, p.y + 0.35, p.z), tangent: this.sampleTan[i], radius: 4.2 });
     });
   }
 
