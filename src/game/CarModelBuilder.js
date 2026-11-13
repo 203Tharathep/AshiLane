@@ -65,6 +65,7 @@ export class CarModelBuilder {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.userData = { ...(texture.userData || {}), shared: true };
     this.textureCache.set(url, texture);
     return texture;
   }

@@ -4,6 +4,19 @@ import { SKINS } from '../data/skinsData.js';
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
+const SHARED_TEXTURE_CACHE = new Map();
+const SHARED_TEXTURE_LOADER = new THREE.TextureLoader();
+
+function getSharedAssetTexture(url) {
+  if (SHARED_TEXTURE_CACHE.has(url)) {
+    return SHARED_TEXTURE_CACHE.get(url);
+  }
+  const tex = SHARED_TEXTURE_LOADER.load(url);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.userData = { ...(tex.userData || {}), shared: true };
+  SHARED_TEXTURE_CACHE.set(url, tex);
+  return tex;
+}
 
 /**
  * Rich per-stage 3D atmosphere, lighting, sky dome, and shadow direction presets.
@@ -1235,8 +1248,7 @@ export class TrackDecorations {
         group.add(arm, bulb);
       });
 
-      const tex = this.textureLoader.load(`/assets/ashi/${cfg.file}`);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      const tex = getSharedAssetTexture(`/assets/ashi/${cfg.file}`);
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex }));
       screen.position.set(0, 8 + h / 2, 0.47);
       group.add(screen);

@@ -93,6 +93,13 @@ export class Game {
     // UI
     this.ui = new UIManager(this);
 
+    // Wire live network status, latency & lobby settings callbacks to UI
+    this.multiplayer.onStatusChange = (status) => this.ui.updateNetworkStatus(status);
+    this.multiplayer.onLatencyUpdate = (ms, transport) => this.ui.updateNetworkStatus({ state: 'connected', latencyMs: ms, transport });
+    this.multiplayer.onSettingsChange = (settings) => this.ui.updateLobbySettingsDisplay(settings);
+    this.multiplayer.onConnectionLost = (reason) => this.handleMultiplayerDisconnected(reason);
+    this.multiplayer.warmUpServer();
+
     // Inputs
     this.keys = {};
     this.initInputs();
@@ -866,7 +873,19 @@ export class Game {
 
   // --- Multiplayer Lifecycle ---
   onMultiplayerStateChanged(lobbyState) {
+    this.ui.syncLobbyHostState(lobbyState.isHost, lobbyState.settings);
     this.ui.updateLobbyPlayers(lobbyState.players, lobbyState.localPlayerId);
+  }
+
+  handleMultiplayerDisconnected(reason) {
+    if (this.ui && this.ui.viewLobby && !this.ui.viewLobby.classList.contains('hidden')) {
+      this.ui.showToast(reason || 'หลุดการเชื่อมต่อจากห้อง', 'error', 4000);
+      this.ui.showView('menu');
+    } else if (this.gameMode === 'multiplayer' && this.state === 'RACING') {
+      if (this.hud && this.hud.showNotification) {
+        this.hud.showNotification(`⚠️ ${reason || 'การเชื่อมต่อเซิร์ฟเวอร์ขาดหาย'}`, 4000);
+      }
+    }
   }
 
   onMultiplayerStartRace(packet) {
@@ -1066,6 +1085,14 @@ export class Game {
     }
 
     if (!remote || !remote.car) return;
+
+    // Drop out-of-order / stale transform packets
+    if (data.seq !== undefined && remote.lastSeq !== undefined && data.seq <= remote.lastSeq) {
+      return;
+    }
+    if (data.seq !== undefined) {
+      remote.lastSeq = data.seq;
+    }
 
     // Instant snap if teleported or initial position jump > 15 meters
     if (remote.car.position.distanceTo(new THREE.Vector3(data.x, data.y, data.z)) > 15) {

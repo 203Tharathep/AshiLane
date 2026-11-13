@@ -281,28 +281,50 @@ export class UIManager {
     }
 
     // Lobby buttons
-    document.getElementById('btn-copy-code')?.addEventListener('click', () => {
-      const code = document.getElementById('lobby-room-code')?.textContent;
-      if (code) {
-        navigator.clipboard.writeText(code);
-        alert(`คัดลอกรหัสห้องแล้ว: ${code}`);
+    const copyTextWithFallback = (text, successMsg) => {
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          this.showToast(successMsg, 'success');
+        }).catch(() => {
+          this.showToast(successMsg, 'success');
+        });
+      } else {
+        this.showToast(successMsg, 'success');
       }
+    };
+
+    document.getElementById('btn-copy-code')?.addEventListener('click', () => {
+      const code = document.getElementById('lobby-room-code')?.textContent?.trim();
+      copyTextWithFallback(code, `📋 คัดลอกรหัสห้องแล้ว: ${code}`);
     });
 
     document.getElementById('btn-copy-link')?.addEventListener('click', () => {
-      const code = document.getElementById('lobby-room-code')?.textContent;
+      const code = document.getElementById('lobby-room-code')?.textContent?.trim();
       if (code) {
         const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
-        navigator.clipboard.writeText(url);
-        alert(`คัดลอกลิงก์ชวนเพื่อนแล้ว!\n${url}`);
+        copyTextWithFallback(url, `🔗 คัดลอกลิงก์ชวนเพื่อนเข้าห้อง ${code} แล้ว!`);
       }
     });
 
-    document.getElementById('btn-start-race')?.addEventListener('click', () => {
-      const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3');
+    const syncHostLobbySettings = () => {
+      if (!this.game.multiplayer.isHost) return;
+      const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3', 10);
       const aiVal = document.getElementById('lobby-ai-select')?.value || 'auto';
-      const aiCount = (aiVal === 'auto') ? 'auto' : parseInt(aiVal);
-      const trackId = document.getElementById('lobby-stage-select')?.value || 'beach';
+      const aiCount = (aiVal === 'auto') ? 'auto' : parseInt(aiVal, 10);
+      const trackId = document.getElementById('lobby-stage-select')?.value || 'buriram';
+      this.game.multiplayer.updateSettings({ laps, aiCount, trackId });
+    };
+
+    document.getElementById('lobby-stage-select')?.addEventListener('change', syncHostLobbySettings);
+    document.getElementById('lobby-laps-select')?.addEventListener('change', syncHostLobbySettings);
+    document.getElementById('lobby-ai-select')?.addEventListener('change', syncHostLobbySettings);
+
+    document.getElementById('btn-start-race')?.addEventListener('click', () => {
+      const laps = parseInt(document.getElementById('lobby-laps-select')?.value || '3', 10);
+      const aiVal = document.getElementById('lobby-ai-select')?.value || 'auto';
+      const aiCount = (aiVal === 'auto') ? 'auto' : parseInt(aiVal, 10);
+      const trackId = document.getElementById('lobby-stage-select')?.value || 'buriram';
       this.triggerRaceStartTransition(() => {
         this.game.multiplayer.startRace({ laps, aiCount, trackId });
       });
@@ -322,6 +344,36 @@ export class UIManager {
       this.showView('menu');
     };
     document.getElementById('btn-leave-lobby')?.addEventListener('click', handleLeaveLobby);
+
+    // Join Room Modal controls
+    const joinModal = document.getElementById('modal-join-room');
+    const joinInput = document.getElementById('join-room-code-input');
+    const confirmJoinBtn = document.getElementById('btn-confirm-join-room');
+    const cancelJoinBtn = document.getElementById('btn-cancel-join-room');
+
+    cancelJoinBtn?.addEventListener('click', () => {
+      joinModal?.classList.add('hidden');
+      this.game.multiplayer.clearPendingAction?.();
+    });
+
+    joinModal?.addEventListener('click', (e) => {
+      if (e.target === joinModal) {
+        joinModal.classList.add('hidden');
+      }
+    });
+
+    confirmJoinBtn?.addEventListener('click', () => {
+      this.submitJoinRoom(joinInput?.value || '');
+    });
+
+    joinInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.submitJoinRoom(joinInput.value);
+      } else if (e.key === 'Escape') {
+        joinModal?.classList.add('hidden');
+      }
+    });
 
     // Victory Screen buttons
     document.getElementById('btn-victory-restart')?.addEventListener('click', () => {
@@ -698,52 +750,212 @@ export class UIManager {
   }
 
   showCreateRoomPrompt() {
+    if (this._creatingRoom) return;
+    this._creatingRoom = true;
+    const createBtn = document.getElementById('btn-open-create-room');
+    const origHtml = createBtn ? createBtn.innerHTML : '';
+    if (createBtn) {
+      createBtn.disabled = true;
+      createBtn.textContent = '⏳ กำลังสร้างห้อง...';
+    }
+    this.showToast('⏳ กำลังเชื่อมต่อเซิร์ฟเวอร์และสร้างห้อง...', 'info', 6000);
+
+    const initialSettings = {
+      trackId: document.getElementById('lobby-stage-select')?.value || 'buriram',
+      laps: parseInt(document.getElementById('lobby-laps-select')?.value || '3', 10),
+      aiCount: document.getElementById('lobby-ai-select')?.value || 'auto'
+    };
+
+    const restoreBtn = () => {
+      this._creatingRoom = false;
+      if (createBtn) {
+        createBtn.disabled = false;
+        createBtn.innerHTML = origHtml;
+      }
+    };
+
     const playerConfig = this.getPlayerConfig();
     this.game.multiplayer.createRoom(
       playerConfig,
       (roomCode) => {
-        this.setupLobbyView(roomCode, true);
+        restoreBtn();
+        this.setupLobbyView(roomCode, true, this.game.multiplayer.roomSettings);
+        this.showToast(`✅ สร้างห้อง ${roomCode} สำเร็จ! ส่งรหัสให้เพื่อนเลย`, 'success', 3200);
       },
       (err) => {
-        alert('เกิดข้อผิดพลาดในการสร้างห้อง: ' + err.message);
-      }
+        restoreBtn();
+        this.showToast(`❌ สร้างห้องไม่สำเร็จ: ${err.message}`, 'error', 4500);
+      },
+      initialSettings
     );
   }
 
+  openJoinRoomModal(prefillCode = '') {
+    const modal = document.getElementById('modal-join-room');
+    const input = document.getElementById('join-room-code-input');
+    const errEl = document.getElementById('join-room-error');
+    const confirmBtn = document.getElementById('btn-confirm-join-room');
+
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.classList.add('hidden');
+    }
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '🚀 เข้าร่วมห้อง';
+    }
+    if (input) {
+      input.value = String(prefillCode || '').toUpperCase().trim().replace(/^ASHI[-_\s]?/, '');
+    }
+    modal?.classList.remove('hidden');
+    setTimeout(() => input?.focus(), 60);
+  }
+
   showJoinRoomPrompt() {
-    const code = prompt('กรุณากรอกรหัสห้อง (Room Code เช่น ASHI-1234):');
-    if (!code) return;
+    this.openJoinRoomModal('');
+  }
+
+  submitJoinRoom(rawCode) {
+    const code = String(rawCode || '').toUpperCase().trim();
+    const errEl = document.getElementById('join-room-error');
+    const confirmBtn = document.getElementById('btn-confirm-join-room');
+    const modal = document.getElementById('modal-join-room');
+
+    if (!code) {
+      if (errEl) {
+        errEl.textContent = 'กรุณากรอกรหัสห้องก่อนเข้าร่วม';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (errEl) errEl.classList.add('hidden');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '⏳ กำลังเข้าร่วม...';
+    }
 
     const playerConfig = this.getPlayerConfig();
     this.game.multiplayer.joinRoom(
       code,
       playerConfig,
       (joinedCode) => {
-        this.setupLobbyView(joinedCode, false);
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '🚀 เข้าร่วมห้อง';
+        }
+        modal?.classList.add('hidden');
+        this.setupLobbyView(joinedCode, false, this.game.multiplayer.roomSettings);
+        this.showToast(`✅ เข้าห้อง ${joinedCode} สำเร็จ!`, 'success', 2800);
       },
       (err) => {
-        alert('ไม่สามารถเชื่อมต่อห้องนี้ได้ ตรวจสอบรหัสห้องอีกครั้ง: ' + err.message);
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = '🚀 เข้าร่วมห้อง';
+        }
+        if (errEl) {
+          errEl.textContent = err.message || 'ไม่สามารถเข้าร่วมห้องได้';
+          errEl.classList.remove('hidden');
+        } else {
+          this.showToast(`❌ ${err.message}`, 'error', 4000);
+        }
       }
     );
   }
 
-  setupLobbyView(roomCode, isHost) {
+  setupLobbyView(roomCode, isHost, settings = null) {
     this.showView('lobby');
-    document.getElementById('lobby-room-code').textContent = roomCode;
+    const codeEl = document.getElementById('lobby-room-code');
+    if (codeEl) codeEl.textContent = roomCode;
 
+    const readyBtn = document.getElementById('btn-ready');
+    if (readyBtn) {
+      readyBtn.dataset.ready = 'false';
+      readyBtn.textContent = '⏳ กดพร้อม';
+      readyBtn.classList.remove('ready');
+    }
+
+    this.syncLobbyHostState(isHost, settings);
+  }
+
+  syncLobbyHostState(isHost, settings = null) {
     const hostControls = document.getElementById('lobby-host-controls');
+    const guestSettings = document.getElementById('lobby-guest-settings');
     const startBtn = document.getElementById('btn-start-race');
     const readyBtn = document.getElementById('btn-ready');
 
     if (isHost) {
-      if (hostControls) hostControls.classList.remove('hidden');
-      if (startBtn) startBtn.classList.remove('hidden');
-      if (readyBtn) readyBtn.classList.add('hidden');
+      hostControls?.classList.remove('hidden');
+      guestSettings?.classList.add('hidden');
+      startBtn?.classList.remove('hidden');
+      readyBtn?.classList.add('hidden');
     } else {
-      if (hostControls) hostControls.classList.add('hidden');
-      if (startBtn) startBtn.classList.add('hidden');
-      if (readyBtn) readyBtn.classList.remove('hidden');
+      hostControls?.classList.add('hidden');
+      guestSettings?.classList.remove('hidden');
+      startBtn?.classList.add('hidden');
+      readyBtn?.classList.remove('hidden');
     }
+
+    if (settings) {
+      this.updateLobbySettingsDisplay(settings);
+    }
+  }
+
+  updateLobbySettingsDisplay(settings) {
+    if (!settings) return;
+    const stageSelect = document.getElementById('lobby-stage-select');
+    const lapsSelect = document.getElementById('lobby-laps-select');
+    const aiSelect = document.getElementById('lobby-ai-select');
+
+    if (stageSelect && settings.trackId) stageSelect.value = settings.trackId;
+    if (lapsSelect && settings.laps) lapsSelect.value = String(settings.laps);
+    if (aiSelect && settings.aiCount !== undefined) aiSelect.value = String(settings.aiCount);
+
+    const track = TRACKS.find(t => t.id === settings.trackId);
+    const stageText = track ? `${track.icon || '🏁'} ${track.nameTh}` : (settings.trackId || 'บุรีรัมย์');
+    const lapsText = `${settings.laps || 3} รอบ`;
+    const aiText = settings.aiCount === 'auto'
+      ? 'เติมอัตโนมัติ (ครบ 8 คัน)'
+      : (Number(settings.aiCount) === 0 ? 'ไม่เติมบอท (เฉพาะเพื่อน)' : `+ ${settings.aiCount} คัน`);
+
+    const gStage = document.getElementById('guest-setting-stage');
+    const gLaps = document.getElementById('guest-setting-laps');
+    const gAi = document.getElementById('guest-setting-ai');
+    if (gStage) gStage.textContent = stageText;
+    if (gLaps) gLaps.textContent = lapsText;
+    if (gAi) gAi.textContent = aiText;
+  }
+
+  updateNetworkStatus(status = {}) {
+    const el = document.getElementById('lobby-net-status');
+    if (!el) return;
+    el.classList.remove('warn', 'error');
+
+    const transportLabel = status.transport === 'peer' ? 'PeerJS' : 'WS';
+    if (status.state === 'connecting' || status.state === 'reconnecting') {
+      el.classList.add('warn');
+      el.textContent = `🟡 ${status.message || 'กำลังเชื่อมต่อ...'}`;
+    } else if (status.state === 'error' || status.state === 'disconnected') {
+      el.classList.add('error');
+      el.textContent = `🔴 ${status.message || 'หลุดการเชื่อมต่อ'}`;
+    } else if (status.state === 'connected') {
+      const pingText = status.latencyMs ? ` • ${status.latencyMs} ms` : '';
+      el.textContent = `🟢 ออนไลน์ (${transportLabel}${pingText})`;
+    }
+  }
+
+  showToast(message, type = 'info', duration = 2600) {
+    const toast = document.getElementById('ui-toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.remove('hidden', 'error', 'success');
+    if (type === 'error') toast.classList.add('error');
+    else if (type === 'success') toast.classList.add('success');
+
+    if (this._toastTimer) clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, duration);
   }
 
   updateLobbyPlayers(players, localPlayerId) {

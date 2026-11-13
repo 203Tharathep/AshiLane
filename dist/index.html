@@ -10,8 +10,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Kanit:ital,wght@0,300;0,400;0,700;0,900;1,700&family=Orbitron:wght@500;700;900&display=swap"
     rel="stylesheet">
-  <script type="module" crossorigin src="/assets/index-BKnjep9O.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-tiMKJ4wU.css">
+  <script type="module" crossorigin src="/assets/index-3W_3WlnD.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-oiVcQOmG.css">
 </head>
 
 <body>
@@ -515,8 +515,11 @@
   <div id="view-lobby" class="ui-view hidden">
     <div class="lobby-card">
       <div class="lobby-header">
-        <div class="room-code-tag">รหัสห้อง (ROOM CODE)</div>
-        <div id="lobby-room-code" class="room-code-big">ASHI-0000</div>
+        <div class="lobby-top-meta">
+          <div class="room-code-tag">รหัสห้อง (ROOM CODE)</div>
+          <div id="lobby-net-status" class="lobby-net-status">🟢 เชื่อมต่อแล้ว</div>
+        </div>
+        <div id="lobby-room-code" class="room-code-big">0000</div>
         <div class="code-btn-row">
           <button id="btn-copy-code" class="btn btn-sm">📋 คัดลอกรหัส</button>
           <button id="btn-copy-link" class="btn btn-sm btn-cyan">🔗 คัดลอกลิงก์ชวนเพื่อน</button>
@@ -563,6 +566,13 @@
             <option value="7">+ 7 คัน</option>
           </select>
         </div>
+      </div>
+
+      <!-- Guest Read-Only Settings Summary (synced live from Host) -->
+      <div id="lobby-guest-settings" class="lobby-guest-settings hidden">
+        <div class="guest-setting-pill"><span>🗺️ สนาม:</span> <strong id="guest-setting-stage">บุรีรัมย์ ไนท์ กรังด์ปรีซ์</strong></div>
+        <div class="guest-setting-pill"><span>🔁 จำนวนรอบ:</span> <strong id="guest-setting-laps">3 รอบ</strong></div>
+        <div class="guest-setting-pill"><span>🤖 บอท AI:</span> <strong id="guest-setting-ai">เติมบอทอัตโนมัติ (ครบ 8 คัน)</strong></div>
       </div>
 
       <!-- Lobby Action Buttons -->
@@ -624,6 +634,32 @@
 
     </div>
   </div>
+
+  <!-- Modal: Join Room by Code -->
+  <div id="modal-join-room" class="room-modal-overlay hidden">
+    <div class="room-modal-card">
+      <div class="room-modal-badge">🔗 MULTIPLAYER ROOM</div>
+      <h2 class="room-modal-title">เข้าร่วมห้องแข่งกับเพื่อน</h2>
+      <p class="room-modal-sub">กรอกรหัสห้อง 4 ตัวอักษรที่ได้รับจากเพื่อน (เช่น X7K2)</p>
+      <input
+        id="join-room-code-input"
+        type="text"
+        maxlength="12"
+        placeholder="ใส่รหัสห้องที่นี่..."
+        autocomplete="off"
+        autocapitalize="characters"
+        spellcheck="false"
+      />
+      <div id="join-room-error" class="room-modal-error hidden"></div>
+      <div class="room-modal-actions">
+        <button id="btn-cancel-join-room" class="btn btn-secondary" type="button">ยกเลิก</button>
+        <button id="btn-confirm-join-room" class="btn btn-primary" type="button">🚀 เข้าร่วมห้อง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Non-blocking UI Toast Notification -->
+  <div id="ui-toast" class="ui-toast hidden"></div>
 
 </body>
 
